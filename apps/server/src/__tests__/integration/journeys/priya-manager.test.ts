@@ -2,7 +2,7 @@
  * Priya's Portfolio Manager Journey Integration Test
  *
  * Persona: 31-year-old quant at a crypto fund, professional DeFi experience
- * Journey: portfolio → agent start+status → marketplace → history JSON → reasoning
+ * Journey: portfolio → agent start+status → history JSON → reasoning
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { createMockAdapterControls } from "../mocks/mock-chain-adapter.js";
@@ -96,18 +96,7 @@ describe("Priya's portfolio management journey", () => {
     expect(status.success).toBe(true);
   });
 
-  it("step 3: browses marketplace agents", async () => {
-    const skill = harness.skillRegistry.get("marketplace")!;
-    const result = await skill.execute(
-      { action: "browse" },
-      { userId, walletAddress: null, chainIds: [1], sendReply: vi.fn() },
-    );
-
-    expect(result.success).toBe(true);
-    expect(result.message).toContain("dca");
-  });
-
-  it("step 4: exports transaction history as JSON", async () => {
+  it("step 3: exports transaction history as JSON", async () => {
     // Insert a record
     harness.executor.getTransactionLog().create({
       userId,
@@ -130,7 +119,7 @@ describe("Priya's portfolio management journey", () => {
     expect(result.message).toContain("swap");
   });
 
-  it("step 5: views agent reasoning traces", async () => {
+  it("step 4: views agent reasoning traces", async () => {
     const agentSkill = harness.skillRegistry.get("agent")!;
     const result = await agentSkill.execute(
       { action: "reasoning", agentId },

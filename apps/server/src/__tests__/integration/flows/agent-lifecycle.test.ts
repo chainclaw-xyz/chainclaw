@@ -97,25 +97,4 @@ describe("Agent lifecycle integration", () => {
     expect(stopped.success).toBe(true);
   });
 
-  it("marketplace browse lists published agents", async () => {
-    const skill = harness.skillRegistry.get("marketplace")!;
-    const result = await skill.execute(
-      { action: "browse" },
-      { userId: "mp-user", walletAddress: null, chainIds: [1], sendReply: vi.fn() },
-    );
-
-    expect(result.success).toBe(true);
-    expect(result.message).toContain("dca");
-    expect(result.message).toContain("Dollar-cost averaging");
-  });
-
-  it("marketplace leaderboard returns results", async () => {
-    const skill = harness.skillRegistry.get("marketplace")!;
-    const result = await skill.execute(
-      { action: "leaderboard" },
-      { userId: "mp-user", walletAddress: null, chainIds: [1], sendReply: vi.fn() },
-    );
-
-    expect(result.success).toBe(true);
-  });
 });

@@ -13,8 +13,6 @@ COPY packages/skills-sdk/package.json packages/skills-sdk/
 COPY packages/agent/package.json packages/agent/
 COPY packages/pipeline/package.json packages/pipeline/
 COPY packages/agent-sdk/package.json packages/agent-sdk/
-COPY packages/marketplace/package.json packages/marketplace/
-COPY packages/data-pipeline/package.json packages/data-pipeline/
 COPY apps/server/package.json apps/server/
 RUN npm ci
 
@@ -48,10 +46,6 @@ COPY --from=builder /app/packages/pipeline/dist ./packages/pipeline/dist
 COPY --from=builder /app/packages/pipeline/package.json ./packages/pipeline/
 COPY --from=builder /app/packages/agent-sdk/dist ./packages/agent-sdk/dist
 COPY --from=builder /app/packages/agent-sdk/package.json ./packages/agent-sdk/
-COPY --from=builder /app/packages/marketplace/dist ./packages/marketplace/dist
-COPY --from=builder /app/packages/marketplace/package.json ./packages/marketplace/
-COPY --from=builder /app/packages/data-pipeline/dist ./packages/data-pipeline/dist
-COPY --from=builder /app/packages/data-pipeline/package.json ./packages/data-pipeline/
 COPY --from=builder /app/apps/server/dist ./apps/server/dist
 COPY --from=builder /app/apps/server/package.json ./apps/server/
 COPY --from=builder /app/package.json ./

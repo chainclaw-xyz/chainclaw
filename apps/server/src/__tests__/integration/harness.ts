@@ -29,7 +29,6 @@ import {
   createHistorySkill,
   createBacktestSkill,
   createAgentSkill,
-  createMarketplaceSkill,
   getTokenPrice,
 } from "@chainclaw/skills";
 import { AgentRuntime } from "@chainclaw/agent";
@@ -42,11 +41,6 @@ import {
   createSampleDcaAgent,
   type AgentDefinition,
 } from "@chainclaw/agent-sdk";
-import {
-  AgentRegistry,
-  SubscriptionManager,
-  LeaderboardService,
-} from "@chainclaw/marketplace";
 
 import type { GatewayDeps } from "@chainclaw/gateway";
 import { FetchRouter } from "./mocks/fetch-router.js";
@@ -71,11 +65,6 @@ export interface TestHarness {
   agentRunner: AgentRunner;
   performanceTracker: PerformanceTracker;
   backtestEngine: BacktestEngine;
-
-  // Marketplace
-  agentRegistry: AgentRegistry;
-  subscriptionManager: SubscriptionManager;
-  leaderboardService: LeaderboardService;
 
   // Mock controls
   fetchRouter: FetchRouter;
@@ -160,7 +149,7 @@ export function createTestHarness(options: HarnessOptions = {}): TestHarness {
     rpcOverrides,
   );
 
-  // ─── 6. Register all 14 skills ──────────────────────────────
+  // ─── 6. Register all 12 core skills ─────────────────────────
   const skillRegistry = new SkillRegistry();
   skillRegistry.register(createBalanceSkill(chainManager));
   skillRegistry.register(createSwapSkill(executor, walletManager));
@@ -192,29 +181,7 @@ export function createTestHarness(options: HarnessOptions = {}): TestHarness {
   skillRegistry.register(createBacktestSkill(backtestEngine, resolveAgent));
   skillRegistry.register(createAgentSkill(agentRunner, performanceTracker, resolveAgent));
 
-  // ─── 8. Marketplace ───────────────────────────────────────────
-  const agentRegistry = new AgentRegistry(db);
-  const subscriptionManager = new SubscriptionManager(db, agentRegistry, agentRunner);
-  const leaderboardService = new LeaderboardService(agentRegistry, performanceTracker, db);
-
-  agentRegistry.registerFactory("dca", (opts) =>
-    createSampleDcaAgent({
-      targetToken: (opts?.targetToken as string) ?? "ETH",
-      amountPerBuy: (opts?.amountPerBuy as number) ?? undefined,
-      chainId: (opts?.chainId as number) ?? undefined,
-    }),
-  );
-  agentRegistry.publish("dca", {
-    version: "1.0.0",
-    description: "Dollar-cost averaging agent. Buys a fixed amount of a target token at regular intervals.",
-    author: "ChainClaw",
-    category: "dca",
-    chainSupport: [1, 8453, 42161, 10],
-  });
-
-  skillRegistry.register(createMarketplaceSkill(agentRegistry, subscriptionManager, leaderboardService));
-
-  // ─── 9. Agent runtime (optional) ──────────────────────────────
+  // ─── 8. Agent runtime (optional) ───────────────────────────────
   const mockLLM = new MockLLMProvider();
   let agentRuntime: AgentRuntime | undefined;
 
@@ -222,7 +189,7 @@ export function createTestHarness(options: HarnessOptions = {}): TestHarness {
     agentRuntime = new AgentRuntime(mockLLM, db, skillRegistry);
   }
 
-  // ─── 10. Command router ──────────────────────────────────────
+  // ─── 9. Command router ───────────────────────────────────────
   const gatewayDeps: GatewayDeps = {
     walletManager,
     chainManager,
@@ -249,9 +216,6 @@ export function createTestHarness(options: HarnessOptions = {}): TestHarness {
     agentRunner,
     performanceTracker,
     backtestEngine,
-    agentRegistry,
-    subscriptionManager,
-    leaderboardService,
     fetchRouter,
     mockLLM,
     adapterControls,

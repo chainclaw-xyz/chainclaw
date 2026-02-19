@@ -17,7 +17,6 @@ import {
   createHistorySkill,
   createBacktestSkill,
   createAgentSkill,
-  createMarketplaceSkill,
   getTokenPrice,
 } from "@chainclaw/skills";
 import { createLLMProvider, getDatabase, AgentRuntime, closeDatabase } from "@chainclaw/agent";
@@ -31,18 +30,14 @@ import {
   type AgentDefinition,
 } from "@chainclaw/agent-sdk";
 import {
-  AgentRegistry,
-  SubscriptionManager,
-  LeaderboardService,
-} from "@chainclaw/marketplace";
-import {
   createTelegramBot,
   createDiscordBot,
   createWebChat,
   type GatewayDeps,
 } from "@chainclaw/gateway";
 import { SkillLoader } from "@chainclaw/skills-sdk";
-import { OutcomeLabeler, ReasoningEnricher } from "@chainclaw/data-pipeline";
+import { loadPlugins } from "./plugin-loader.js";
+import type { PluginHandle } from "./plugin.js";
 import { createHealthServer } from "./health.js";
 
 async function main(): Promise<void> {
@@ -88,7 +83,7 @@ async function main(): Promise<void> {
     "Transaction pipeline initialized",
   );
 
-  // ─── Register skills ──────────────────────────────────────
+  // ─── Register core skills ─────────────────────────────────
   const skillRegistry = new SkillRegistry();
   skillRegistry.register(createBalanceSkill(chainManager));
   skillRegistry.register(createSwapSkill(executor, walletManager, config.oneInchApiKey));
@@ -117,29 +112,6 @@ async function main(): Promise<void> {
   skillRegistry.register(createBacktestSkill(backtestEngine, resolveAgent));
   skillRegistry.register(createAgentSkill(agentRunner, performanceTracker, resolveAgent));
 
-  // ─── Marketplace ────────────────────────────────────────────
-  const agentRegistry = new AgentRegistry(db);
-  const subscriptionManager = new SubscriptionManager(db, agentRegistry, agentRunner);
-  const leaderboardService = new LeaderboardService(agentRegistry, performanceTracker, db);
-
-  // Register built-in agent factories
-  agentRegistry.registerFactory("dca", (opts) =>
-    createSampleDcaAgent({
-      targetToken: (opts?.targetToken as string) ?? "ETH",
-      amountPerBuy: (opts?.amountPerBuy as number) ?? undefined,
-      chainId: (opts?.chainId as number) ?? undefined,
-    }),
-  );
-  agentRegistry.publish("dca", {
-    version: "1.0.0",
-    description: "Dollar-cost averaging agent. Buys a fixed amount of a target token at regular intervals.",
-    author: "ChainClaw",
-    category: "dca",
-    chainSupport: [1, 8453, 42161, 10],
-  });
-
-  skillRegistry.register(createMarketplaceSkill(agentRegistry, subscriptionManager, leaderboardService));
-
   // ─── Load community skills ────────────────────────────────
   if (config.skillsDir) {
     const skillLoader = new SkillLoader();
@@ -150,18 +122,6 @@ async function main(): Promise<void> {
     if (errors.length > 0) {
       logger.warn({ errors }, "Some community skills failed to load");
     }
-  }
-
-  logger.info({ skills: skillRegistry.list().map((s) => s.name) }, "Skills registered");
-
-  // ─── Data Pipeline ────────────────────────────────────────
-  let outcomeLabeler: OutcomeLabeler | undefined;
-  let reasoningEnricher: ReasoningEnricher | undefined;
-
-  if (config.dataPipelineEnabled) {
-    outcomeLabeler = new OutcomeLabeler(db, getTokenPrice);
-    outcomeLabeler.start(config.outcomeLabelIntervalMs);
-    logger.info({ intervalMs: config.outcomeLabelIntervalMs }, "Outcome labeler started");
   }
 
   // ─── Initialize agent (LLM + memory) ─────────────────────
@@ -178,17 +138,24 @@ async function main(): Promise<void> {
     );
   }
 
-  // Start reasoning enricher after LLM is available
-  if (config.dataPipelineEnabled && config.reasoningEnrichmentEnabled && agentRuntime) {
-    try {
-      const enrichmentLlm = createLLMProvider(config);
-      reasoningEnricher = new ReasoningEnricher(db, enrichmentLlm);
-      reasoningEnricher.start(600_000); // every 10 minutes
-      logger.info("Reasoning enricher started");
-    } catch (err) {
-      logger.warn({ err }, "Reasoning enricher not available — LLM required");
-    }
+  // ─── Load plugins (marketplace, data-pipeline, etc.) ──────
+  let pluginLlm;
+  if (agentRuntime) {
+    try { pluginLlm = createLLMProvider(config); } catch { /* ok */ }
   }
+
+  const pluginHandles: PluginHandle[] = await loadPlugins({
+    db,
+    skillRegistry,
+    agentRunner,
+    performanceTracker,
+    llm: pluginLlm,
+    config: config as unknown as Record<string, unknown>,
+    getTokenPrice,
+    createSampleDcaAgent,
+  });
+
+  logger.info({ skills: skillRegistry.list().map((s) => s.name) }, "Skills registered");
 
   // ─── Shared gateway deps ──────────────────────────────────
   const gatewayDeps: GatewayDeps = {
@@ -255,8 +222,7 @@ async function main(): Promise<void> {
     agentRunner.stopAll();
     alertEngine.stop();
     dcaScheduler.stop();
-    outcomeLabeler?.stop();
-    reasoningEnricher?.stop();
+    for (const h of pluginHandles) h.stop();
 
     if (telegramBot) telegramBot.stop();
     if (discordClient) discordClient.destroy();

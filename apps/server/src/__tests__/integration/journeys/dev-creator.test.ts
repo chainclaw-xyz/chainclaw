@@ -2,7 +2,7 @@
  * Dev's Agent Creator Journey Integration Test
  *
  * Persona: 27-year-old full-stack developer, DeFi enthusiast
- * Journey: backtest → agent start → agent status → marketplace leaderboard
+ * Journey: backtest → agent start → agent status → stop agent
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { createMockAdapterControls } from "../mocks/mock-chain-adapter.js";
@@ -87,24 +87,7 @@ describe("Dev's agent creator journey", () => {
     expect(result.success).toBe(true);
   });
 
-  it("step 4: browses marketplace and views leaderboard", async () => {
-    const skill = harness.skillRegistry.get("marketplace")!;
-
-    const browse = await skill.execute(
-      { action: "browse" },
-      { userId, walletAddress: null, chainIds: [1], sendReply: vi.fn() },
-    );
-    expect(browse.success).toBe(true);
-    expect(browse.message).toContain("dca");
-
-    const leaderboard = await skill.execute(
-      { action: "leaderboard" },
-      { userId, walletAddress: null, chainIds: [1], sendReply: vi.fn() },
-    );
-    expect(leaderboard.success).toBe(true);
-  });
-
-  it("step 5: stops agent", async () => {
+  it("step 4: stops agent", async () => {
     const skill = harness.skillRegistry.get("agent")!;
     const result = await skill.execute(
       { action: "stop", agentId },

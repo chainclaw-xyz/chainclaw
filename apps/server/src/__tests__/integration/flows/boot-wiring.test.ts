@@ -50,9 +50,9 @@ describe("Boot and wiring", () => {
     harness.cleanup();
   });
 
-  it("registers all 13 skills in the registry", () => {
+  it("registers all 12 core skills in the registry", () => {
     const skills = harness.skillRegistry.list();
-    expect(skills.length).toBe(13);
+    expect(skills.length).toBe(12);
 
     const names = skills.map((s) => s.name);
     expect(names).toContain("balance");
@@ -67,7 +67,6 @@ describe("Boot and wiring", () => {
     expect(names).toContain("history");
     expect(names).toContain("backtest");
     expect(names).toContain("agent");
-    expect(names).toContain("marketplace");
   });
 
   it("creates database with required tables", () => {

@@ -73,7 +73,7 @@ describe("Command routing with real components", () => {
 
     expect(ctx.replies).toHaveLength(1);
     expect(ctx.replies[0]).toContain("Welcome to ChainClaw");
-    expect(ctx.replies[0]).toContain("13 skills");
+    expect(ctx.replies[0]).toContain("12 skills");
   });
 
   it("/help lists all skill descriptions", async () => {
@@ -86,7 +86,6 @@ describe("Command routing with real components", () => {
     expect(ctx.replies[0]).toContain("balance");
     expect(ctx.replies[0]).toContain("swap");
     expect(ctx.replies[0]).toContain("portfolio");
-    expect(ctx.replies[0]).toContain("marketplace");
   });
 
   it("/balance with wallet calls real balance skill through registry", async () => {

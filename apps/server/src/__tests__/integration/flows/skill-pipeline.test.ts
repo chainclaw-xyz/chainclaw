@@ -265,16 +265,4 @@ describe("Skill execution through real SkillRegistry", () => {
     expect(result.message).toContain("Recommendation");
   });
 
-  // ─── Marketplace ───────────────────────────────────────────
-
-  it("marketplace browse lists published DCA agent", async () => {
-    const skill = harness.skillRegistry.get("marketplace")!;
-    const result = await skill.execute(
-      { action: "browse" },
-      { userId: "u-mp", walletAddress: null, chainIds: [1], sendReply: vi.fn() },
-    );
-
-    expect(result.success).toBe(true);
-    expect(result.message).toContain("dca");
-  });
 });

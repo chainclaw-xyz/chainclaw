@@ -15,3 +15,4 @@ export { createAgentSkill } from "./agent-skill.js";
 export { createMarketplaceSkill } from "./marketplace.js";
 export { getTokenPrice, getEthPriceUsd } from "./prices.js";
 export type { SkillDefinition, SkillExecutionContext, UserPreferences } from "./types.js";
+export type { AgentRegistryLike, SubscriptionManagerLike, LeaderboardServiceLike } from "./marketplace-types.js";

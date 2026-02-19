@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { getLogger, type SkillResult } from "@chainclaw/core";
-import type { AgentRegistry, SubscriptionManager, LeaderboardService } from "@chainclaw/marketplace";
+import type { AgentRegistryLike, SubscriptionManagerLike, LeaderboardServiceLike } from "./marketplace-types.js";
 import type { SkillDefinition, SkillExecutionContext } from "./types.js";
 
 const logger = getLogger("skill-marketplace");
@@ -21,9 +21,9 @@ type MarketplaceParams = z.infer<typeof marketplaceParams>;
  * Allows users to browse, search, subscribe to, and manage marketplace agents via chat.
  */
 export function createMarketplaceSkill(
-  registry: AgentRegistry,
-  subscriptions: SubscriptionManager,
-  leaderboard: LeaderboardService,
+  registry: AgentRegistryLike,
+  subscriptions: SubscriptionManagerLike,
+  leaderboard: LeaderboardServiceLike,
 ): SkillDefinition {
   return {
     name: "marketplace",
@@ -55,7 +55,7 @@ export function createMarketplaceSkill(
   };
 }
 
-function handleBrowse(registry: AgentRegistry, parsed: MarketplaceParams): SkillResult {
+function handleBrowse(registry: AgentRegistryLike, parsed: MarketplaceParams): SkillResult {
   const agents = parsed.category
     ? registry.getByCategory(parsed.category)
     : registry.listAgents();
@@ -85,7 +85,7 @@ function handleBrowse(registry: AgentRegistry, parsed: MarketplaceParams): Skill
   return { success: true, message: lines.join("\n") };
 }
 
-function handleSearch(registry: AgentRegistry, parsed: MarketplaceParams): SkillResult {
+function handleSearch(registry: AgentRegistryLike, parsed: MarketplaceParams): SkillResult {
   if (!parsed.query) {
     return { success: false, message: "Please provide a search query." };
   }
@@ -104,7 +104,7 @@ function handleSearch(registry: AgentRegistry, parsed: MarketplaceParams): Skill
   return { success: true, message: lines.join("\n") };
 }
 
-function handleDetail(registry: AgentRegistry, parsed: MarketplaceParams): SkillResult {
+function handleDetail(registry: AgentRegistryLike, parsed: MarketplaceParams): SkillResult {
   if (!parsed.agentName) {
     return { success: false, message: "Please specify an agent name." };
   }
@@ -151,7 +151,7 @@ function handleDetail(registry: AgentRegistry, parsed: MarketplaceParams): Skill
 }
 
 function handleSubscribe(
-  subscriptions: SubscriptionManager,
+  subscriptions: SubscriptionManagerLike,
   parsed: MarketplaceParams,
   context: SkillExecutionContext,
 ): SkillResult {
@@ -179,7 +179,7 @@ function handleSubscribe(
 }
 
 function handleUnsubscribe(
-  subscriptions: SubscriptionManager,
+  subscriptions: SubscriptionManagerLike,
   parsed: MarketplaceParams,
 ): SkillResult {
   if (!parsed.subscriptionId) {
@@ -195,7 +195,7 @@ function handleUnsubscribe(
 }
 
 function handleMyAgents(
-  subscriptions: SubscriptionManager,
+  subscriptions: SubscriptionManagerLike,
   context: SkillExecutionContext,
 ): SkillResult {
   const subs = subscriptions.getUserSubscriptions(context.userId);
@@ -219,7 +219,7 @@ function handleMyAgents(
 }
 
 function handleLeaderboard(
-  leaderboard: LeaderboardService,
+  leaderboard: LeaderboardServiceLike,
   parsed: MarketplaceParams,
 ): SkillResult {
   const formatted = leaderboard.formatLeaderboard({

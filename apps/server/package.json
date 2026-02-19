@@ -15,14 +15,12 @@
   "dependencies": {
     "@chainclaw/agent": "*",
     "@chainclaw/agent-sdk": "*",
-    "@chainclaw/marketplace": "*",
     "@chainclaw/chains": "*",
     "@chainclaw/core": "*",
     "@chainclaw/gateway": "*",
     "@chainclaw/pipeline": "*",
     "@chainclaw/skills": "*",
     "@chainclaw/skills-sdk": "*",
-    "@chainclaw/data-pipeline": "*",
     "@chainclaw/wallet": "*"
   },
   "devDependencies": {
