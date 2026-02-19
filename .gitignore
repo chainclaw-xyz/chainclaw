@@ -12,6 +12,9 @@ data/
 *.sqlite
 *.sqlite3
 
+# Concept docs
+ChainClaw_Concept_Document*
+
 # OS
 .DS_Store
 Thumbs.db
