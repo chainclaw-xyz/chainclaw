@@ -1,0 +1,34 @@
+{
+  "name": "@chainclaw/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "lint": "eslint src/",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@chainclaw/agent": "*",
+    "@chainclaw/agent-sdk": "*",
+    "@chainclaw/marketplace": "*",
+    "@chainclaw/chains": "*",
+    "@chainclaw/core": "*",
+    "@chainclaw/gateway": "*",
+    "@chainclaw/pipeline": "*",
+    "@chainclaw/skills": "*",
+    "@chainclaw/skills-sdk": "*",
+    "@chainclaw/data-pipeline": "*",
+    "@chainclaw/wallet": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.3",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}

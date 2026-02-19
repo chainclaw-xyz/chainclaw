@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChainClaw Web Chat</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0d1117; color: #c9d1d9;
+      display: flex; flex-direction: column; height: 100vh;
+    }
+    header {
+      padding: 16px 20px; border-bottom: 1px solid #21262d;
+      display: flex; align-items: center; gap: 12px;
+    }
+    header h1 { font-size: 18px; font-weight: 600; }
+    #status {
+      font-size: 12px; padding: 2px 8px; border-radius: 12px;
+      background: #f85149; color: #fff;
+    }
+    #status.connected { background: #3fb950; }
+    #messages {
+      flex: 1; overflow-y: auto; padding: 16px 20px;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .msg {
+      padding: 10px 14px; border-radius: 8px; max-width: 80%;
+      line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+    }
+    .msg.user { background: #1f6feb; color: #fff; align-self: flex-end; }
+    .msg.bot { background: #161b22; border: 1px solid #30363d; align-self: flex-start; }
+    .msg.bot code { background: #0d1117; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+    .msg.bot strong { color: #58a6ff; }
+    .confirm-btns { display: flex; gap: 8px; margin-top: 8px; }
+    .confirm-btns button {
+      padding: 6px 16px; border: none; border-radius: 6px;
+      cursor: pointer; font-size: 14px; font-weight: 500;
+    }
+    .btn-yes { background: #238636; color: #fff; }
+    .btn-yes:hover { background: #2ea043; }
+    .btn-no { background: #da3633; color: #fff; }
+    .btn-no:hover { background: #f85149; }
+    #input-area {
+      padding: 16px 20px; border-top: 1px solid #21262d;
+      display: flex; gap: 8px;
+    }
+    #input {
+      flex: 1; padding: 10px 14px; border-radius: 8px;
+      border: 1px solid #30363d; background: #0d1117; color: #c9d1d9;
+      font-size: 15px; outline: none;
+    }
+    #input:focus { border-color: #58a6ff; }
+    #send-btn {
+      padding: 10px 20px; border-radius: 8px; border: none;
+      background: #238636; color: #fff; cursor: pointer;
+      font-size: 15px; font-weight: 500;
+    }
+    #send-btn:hover { background: #2ea043; }
+    #send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ChainClaw</h1>
+    <span id="status">Disconnected</span>
+  </header>
+  <div id="messages"></div>
+  <div id="input-area">
+    <input id="input" type="text" placeholder="Type a message or /help..." autocomplete="off">
+    <button id="send-btn">Send</button>
+  </div>
+
+  <script>
+    const messagesEl = document.getElementById('messages');
+    const inputEl = document.getElementById('input');
+    const sendBtn = document.getElementById('send-btn');
+    const statusEl = document.getElementById('status');
+    let ws;
+
+    function connect() {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${proto}//${location.host}`);
+
+      ws.onopen = () => {
+        statusEl.textContent = 'Connected';
+        statusEl.className = 'connected';
+        sendBtn.disabled = false;
+      };
+
+      ws.onclose = () => {
+        statusEl.textContent = 'Disconnected';
+        statusEl.className = '';
+        sendBtn.disabled = true;
+        setTimeout(connect, 3000);
+      };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === 'reply') {
+          addMessage(data.text, 'bot');
+        } else if (data.type === 'confirm_request') {
+          addConfirmation(data.id, data.prompt);
+        }
+      };
+    }
+
+    function addMessage(text, sender) {
+      const div = document.createElement('div');
+      div.className = `msg ${sender}`;
+      if (sender === 'bot') {
+        div.innerHTML = formatMarkdown(text);
+      } else {
+        div.textContent = text;
+      }
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function addConfirmation(id, prompt) {
+      const div = document.createElement('div');
+      div.className = 'msg bot';
+      div.innerHTML = formatMarkdown(prompt);
+
+      const btns = document.createElement('div');
+      btns.className = 'confirm-btns';
+
+      const yesBtn = document.createElement('button');
+      yesBtn.className = 'btn-yes';
+      yesBtn.textContent = 'Yes, proceed';
+      yesBtn.onclick = () => { respond(id, true); btns.remove(); };
+
+      const noBtn = document.createElement('button');
+      noBtn.className = 'btn-no';
+      noBtn.textContent = 'No, cancel';
+      noBtn.onclick = () => { respond(id, false); btns.remove(); };
+
+      btns.appendChild(yesBtn);
+      btns.appendChild(noBtn);
+      div.appendChild(btns);
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function respond(id, value) {
+      ws.send(JSON.stringify({ type: 'confirm', id, value }));
+    }
+
+    function formatMarkdown(text) {
+      return text
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\*([^*]+)\*/g, '<strong>$1</strong>')
+        .replace(/_([^_]+)_/g, '<em>$1</em>')
+        .replace(/\n/g, '<br>');
+    }
+
+    function sendMessage() {
+      const text = inputEl.value.trim();
+      if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+      addMessage(text, 'user');
+      ws.send(JSON.stringify({ type: 'message', text }));
+      inputEl.value = '';
+    }
+
+    sendBtn.onclick = sendMessage;
+    inputEl.onkeydown = (e) => { if (e.key === 'Enter') sendMessage(); };
+
+    connect();
+  </script>
+</body>
+</html>

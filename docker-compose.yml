@@ -1,0 +1,39 @@
+services:
+  chainclaw:
+    build: .
+    env_file: .env
+    ports:
+      - "8080:8080"  # WebChat
+      - "9090:9090"  # Health check
+    volumes:
+      - chainclaw-data:/app/data
+      - chainclaw-skills:/app/data/skills
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:9090/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      chainclaw:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - tls
+
+volumes:
+  chainclaw-data:
+  chainclaw-skills:
+  caddy-data:
+  caddy-config:

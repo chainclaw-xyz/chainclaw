@@ -1,0 +1,28 @@
+{
+  "name": "@chainclaw/pipeline",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "lint": "eslint src/",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@chainclaw/core": "*",
+    "@chainclaw/chains": "*",
+    "@chainclaw/wallet": "*",
+    "viem": "^2.23.2",
+    "better-sqlite3": "^11.8.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.2.3",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}

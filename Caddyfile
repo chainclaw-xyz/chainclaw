@@ -1,0 +1,7 @@
+{$DOMAIN:localhost} {
+    reverse_proxy chainclaw:8080
+}
+
+health.{$DOMAIN:localhost} {
+    reverse_proxy chainclaw:9090
+}
