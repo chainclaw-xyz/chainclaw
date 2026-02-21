@@ -1,22 +1,19 @@
 # ChainClaw
 
-Self-hosted crypto-native AI agent for DeFi operations. Talk to your wallets in plain English across Telegram, Discord, or a built-in web chat.
+Self-hosted, open-source, crypto-native AI agent for DeFi operations. Talk to your wallets in plain English across Telegram, Discord, or a built-in web chat.
 
-ChainClaw wires an LLM-powered intent parser to a pipeline of real DeFi skills — swap, bridge, lend, DCA, alerts, risk checks, portfolio tracking — with every transaction going through simulation, guardrails, and risk analysis before broadcast. Keys never leave your hardware.
+ChainClaw wires an LLM-powered intent parser to a pipeline of real DeFi skills — swap, bridge, lend, DCA, alerts, risk checks, portfolio tracking, autonomous trading agents — with every transaction going through simulation, guardrails, and risk analysis before broadcast. Keys never leave your machine.
 
 ## Quick Start
 
 ```bash
-# Clone and install
 git clone https://github.com/chainclaw-xyz/chainclaw.git
 cd chainclaw
 npm install
 
-# Configure
 cp .env.example .env
 # Edit .env — set WALLET_PASSWORD, a channel token, and an LLM provider
 
-# Build and run
 npx turbo build
 node apps/server/dist/index.js
 ```
@@ -29,26 +26,29 @@ cp .env.example .env
 docker compose up -d
 ```
 
-## What It Does
+Health check: `http://localhost:9090/health`
+
+## Skills
 
 | Skill | Description |
 |-------|-------------|
 | `balance` | Check token balances across all connected chains |
-| `portfolio` | Portfolio overview with USD values |
+| `portfolio` | Multi-chain portfolio overview with USD values |
 | `swap` | Swap tokens via 1inch DEX aggregation |
 | `bridge` | Bridge tokens across chains via Li.Fi |
 | `lend` | Lend/borrow via Aave V3 (supply, withdraw, borrow, repay) |
 | `dca` | Dollar-cost averaging with recurring schedules |
-| `alert` | Price alerts with channel notifications |
-| `risk_check` | Token/contract safety analysis via GoPlus |
-| `history` | Transaction history (text, CSV, JSON export) |
-| `workflow` | Chain multiple skills into a single workflow |
+| `alert` | Price and position alerts with channel notifications |
+| `risk_check` | Token/contract safety analysis via GoPlus Security API |
+| `history` | Transaction history with text, CSV, and JSON export |
+| `workflow` | Chain multiple skills into a single multi-step workflow |
 | `backtest` | Backtest trading strategies against historical data |
 | `agent` | Start, stop, and monitor autonomous trading agents |
+| `marketplace` | Browse and subscribe to community agents |
 
-All skills work through slash commands (`/balance`, `/help`) or natural language ("What's my ETH balance on Base?"). The LLM intent parser routes natural language to the right skill automatically.
+All skills work through slash commands (`/balance`, `/swap`) or natural language ("Swap 1 ETH to USDC on Base"). The LLM intent parser routes natural language to the right skill automatically.
 
-> **Cloud Plugin:** Install `@chainclaw/cloud-plugin` to add the **marketplace** skill — browse, subscribe to, and rank community agents. See [chainclaw-xyz/cloud](https://github.com/chainclaw-xyz/cloud) for details.
+Without an LLM provider configured, ChainClaw runs in command-only mode — slash commands work, natural language is disabled.
 
 ## Supported Chains
 
@@ -63,46 +63,73 @@ All skills work through slash commands (`/balance`, `/help`) or natural language
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  Channels: Telegram (grammY) / Discord / WebChat (ws)   │
-└──────────────────────┬──────────────────────────────────┘
-                       │
-              ┌────────▼────────┐
-              │  CommandRouter  │  /start /help /balance /wallet /clear
-              │  + AgentRuntime │  "swap 1 ETH for USDC" → IntentParser → skill
-              └────────┬────────┘
-                       │
-              ┌────────▼────────┐
-              │  SkillRegistry  │  12 built-in skills
-              └────────┬────────┘
-                       │
-        ┌──────────────┼──────────────┐
-        │              │              │
-   ChainManager   WalletManager   TransactionExecutor
-   (EVM+Solana)   (AES-256-GCM)  ┌──────────────────┐
-                                  │ simulate (Tenderly)│
-                                  │ risk check (GoPlus)│
-                                  │ guardrails (limits)│
-                                  │ MEV protection     │
-                                  │ sign + broadcast   │
-                                  │ tx log (SQLite)    │
-                                  └──────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  Channels: Telegram (grammY) │ Discord (discord.js) │ WebChat│
+└───────────────────────┬──────────────────────────────────────┘
+                        │
+               ┌────────▼────────┐
+               │  CommandRouter  │  /start /help /balance /wallet ...
+               │  + AgentRuntime │  NL → IntentParser → skill dispatch
+               └────────┬────────┘
+                        │
+               ┌────────▼────────┐
+               │  SkillRegistry  │  14 built-in + community skills
+               └────────┬────────┘
+                        │
+         ┌──────────────┼──────────────┐
+         │              │              │
+    ChainManager   WalletManager   TransactionExecutor
+    (EVM + Solana) (AES-256-GCM)   ┌──────────────────┐
+                   4 signer types  │ simulate (Tenderly)│
+                                   │ risk check (GoPlus) │
+                                   │ guardrails (limits)  │
+                                   │ MEV protection       │
+                                   │ sign + broadcast     │
+                                   │ tx log (SQLite)      │
+                                   └──────────────────────┘
 ```
 
-**11 packages** in a Turborepo monorepo:
+## Project Structure
 
-| Package | Role |
-|---------|------|
-| `@chainclaw/core` | Config (Zod-validated), logger (Pino), shared types |
-| `@chainclaw/chains` | EVM + Solana adapters, ChainManager, chain registry |
-| `@chainclaw/wallet` | AES-256-GCM encrypted wallet storage, transaction signing |
-| `@chainclaw/pipeline` | Transaction executor, simulator, guardrails, risk engine, MEV protection, tx log |
-| `@chainclaw/skills` | All 12 built-in skill implementations |
-| `@chainclaw/skills-sdk` | SDK for building community skills (`defineSkill`, loader, sandbox) |
-| `@chainclaw/agent` | LLM providers (Anthropic, OpenAI, Ollama), intent parser, conversation memory |
-| `@chainclaw/agent-sdk` | Autonomous agent framework: runner, backtest engine, performance tracker |
-| `@chainclaw/gateway` | Telegram, Discord, WebChat adapters, rate limiter, message formatter |
-| `@chainclaw/server` | Entry point — wires everything together |
+```
+chainclaw/
+├── apps/
+│   └── server/              # Entry point — wires everything together
+├── packages/
+│   ├── core/                # Config (Zod), logger (Pino), shared types
+│   ├── chains/              # EVM + Solana adapters, chain registry
+│   ├── wallet/              # Encrypted wallets, signing (Local/Ledger/Coinbase/Safe)
+│   ├── pipeline/            # Tx executor, simulator, guardrails, risk engine, MEV, tx log
+│   ├── skills/              # Built-in skill implementations
+│   ├── skills-sdk/          # SDK for building community skills
+│   ├── agent/               # LLM providers (Anthropic/OpenAI/Ollama), intent parser, memory
+│   ├── agent-sdk/           # Autonomous agent framework, backtest engine
+│   ├── gateway/             # Telegram, Discord, WebChat adapters, rate limiter
+│   └── docs/                # VitePress documentation site
+├── docker-compose.yml
+├── Dockerfile
+├── .env.example
+└── turbo.json
+```
+
+## Wallet Types
+
+| Signer | Description |
+|--------|-------------|
+| `LocalSigner` | Private keys stored locally, encrypted with AES-256-GCM |
+| `LedgerSigner` | Hardware wallet — transactions confirmed on device |
+| `CoinbaseSigner` | Server-side wallet via Coinbase AgentKit |
+| `SafeSigner` | Gnosis Safe multisig — propose, collect signatures, execute |
+
+## Transaction Safety
+
+Every on-chain transaction passes through a multi-layer safety pipeline before broadcast:
+
+1. **Simulation** — Tenderly fork simulation shows balance changes, gas estimate, and revert detection before signing
+2. **Risk Analysis** — GoPlus Security API checks for honeypots, owner privileges, mint functions, blacklists, buy/sell taxes, holder concentration
+3. **Guardrails** — Per-user spending limits (daily/weekly/per-tx), slippage tolerance, confirmation gates for large transactions
+4. **MEV Protection** — Ethereum mainnet transactions route through Flashbots Protect to prevent sandwich attacks
+5. **Audit Log** — Every transaction is logged with full metadata (intent, simulation result, risk score, outcome)
 
 ## Configuration
 
@@ -129,8 +156,6 @@ OPENAI_API_KEY=                         # Required for OpenAI
 OLLAMA_BASE_URL=http://localhost:11434  # For local models (zero-cost)
 ```
 
-Without an LLM provider, ChainClaw runs in command-only mode — slash commands work, natural language is disabled.
-
 ### Optional
 
 ```env
@@ -141,7 +166,7 @@ ARBITRUM_RPC_URL=
 OPTIMISM_RPC_URL=
 SOLANA_RPC_URL=
 
-# Transaction simulation (Tenderly)
+# Transaction simulation
 TENDERLY_API_KEY=
 TENDERLY_ACCOUNT=
 TENDERLY_PROJECT=
@@ -149,36 +174,104 @@ TENDERLY_PROJECT=
 # Live swap execution (quotes work without it)
 1INCH_API_KEY=
 
+# Coinbase AgentKit
+COINBASE_API_KEY_NAME=
+COINBASE_API_KEY_SECRET=
+
+# Community skills directory
+SKILLS_DIR=./data/skills
+
 # Logging
-LOG_LEVEL=info                          # fatal/error/warn/info/debug/trace
+LOG_LEVEL=info                          # fatal | error | warn | info | debug | trace
 ```
 
-## Development
+## Building Community Skills
 
-```bash
-npm install
-npx turbo build
-npx turbo test              # Run all 451 tests
+Use `@chainclaw/skills-sdk` to build and distribute custom skills:
+
+```typescript
+import { defineSkill } from "@chainclaw/skills-sdk";
+import { z } from "zod";
+
+export default defineSkill(
+  {
+    name: "my-skill",
+    version: "1.0.0",
+    description: "Does something useful",
+    author: "you",
+    permissions: ["read_balance"],
+  },
+  () => ({
+    name: "my-skill",
+    description: "Does something useful",
+    parameters: z.object({
+      token: z.string(),
+    }),
+    async execute(params, context) {
+      const parsed = z.object({ token: z.string() }).parse(params);
+      return {
+        success: true,
+        message: `Processed ${parsed.token}`,
+      };
+    },
+  }),
+);
 ```
 
-Run a specific package's tests:
+Place skill packages in the `SKILLS_DIR` directory. ChainClaw loads them at startup with sandboxed execution — skills declare permissions and run in isolated contexts.
 
-```bash
-npx vitest run --config packages/skills/vitest.config.ts
-npx vitest run --config apps/server/vitest.config.ts
+## Building Autonomous Agents
+
+Use `@chainclaw/agent-sdk` to define trading strategies that run autonomously:
+
+```typescript
+import type { AgentDefinition, StrategyContext, StrategyDecision } from "@chainclaw/agent-sdk";
+
+const myAgent: AgentDefinition = {
+  name: "my-dca-agent",
+  version: "1.0.0",
+  description: "Weekly DCA into ETH",
+  author: "you",
+  category: "dca",
+  skills: ["swap"],
+
+  riskParams: {
+    maxPositionSizeUsd: 200,
+    maxDrawdownPercent: 50,
+    maxDailyTradesCount: 5,
+    maxDailyExposureUsd: 300,
+    allowedChainIds: [1],
+    allowedTokens: ["ETH"],
+  },
+
+  strategy: {
+    evaluationIntervalMs: 7 * 24 * 60 * 60 * 1000, // Weekly
+    watchlist: ["ETH"],
+
+    evaluate: async (context: StrategyContext): Promise<StrategyDecision[]> => {
+      const price = context.prices["ETH"];
+      if (!price) return [];
+
+      return [{
+        action: "buy",
+        token: "ETH",
+        amountUsd: 100,
+        chainId: 1,
+        reasoning: `DCA: buying $100 of ETH at $${price.toFixed(2)}`,
+        signals: [{
+          token: "ETH",
+          strength: "buy",
+          confidence: 0.8,
+          reasoning: "Dollar-cost averaging — time-based entry",
+          timestamp: context.timestamp,
+        }],
+      }];
+    },
+  },
+};
 ```
 
-### Test Suite
-
-451 tests across 50 test files:
-
-| Category | Tests | What it covers |
-|----------|-------|----------------|
-| Unit tests | 379 | Every package in isolation — skills, pipeline, wallet crypto, chain adapters, intent parsing, agent SDK |
-| Integration tests | 72 | Full-stack flows through real component wiring — boot, wallet lifecycle, command routing, skill pipeline, NL-to-skill, background services, agent lifecycle |
-| Journey tests | (included above) | 5 persona-based end-to-end journeys: beginner onboarding, active DeFi trader, portfolio manager, agent creator, DAO treasury (Discord) |
-
-Integration tests use a harness that mirrors the production boot sequence with real internal components, mocking only external boundaries (RPCs, HTTP APIs, LLM).
+Agents can be backtested against historical data before going live. Use the `backtest` skill via chat to validate strategy performance.
 
 ## Docker
 
@@ -186,11 +279,48 @@ Integration tests use a harness that mirrors the production boot sequence with r
 # Basic
 docker compose up -d
 
-# With TLS (Caddy reverse proxy)
-docker compose --profile tls up -d
+# With TLS via Caddy reverse proxy
+DOMAIN=chainclaw.example.com docker compose --profile tls up -d
 ```
 
-Health check at `http://localhost:9090/health`.
+The Docker image uses a multi-stage build (Node 20 slim) with built-in health checks. Data persists in Docker volumes (`chainclaw-data`, `chainclaw-skills`).
+
+| Port | Service |
+|------|---------|
+| 8080 | WebChat (WebSocket) |
+| 9090 | Health check |
+
+## Development
+
+```bash
+npm install
+npx turbo build
+npx turbo test
+```
+
+Run a specific package's tests:
+
+```bash
+npx vitest run --config packages/pipeline/vitest.config.ts
+npx vitest run --config packages/skills/vitest.config.ts
+npx vitest run --config apps/server/vitest.config.ts
+```
+
+### Test Suite
+
+377 tests across 56 test files:
+
+| Category | Tests | Coverage |
+|----------|-------|----------|
+| Unit | 304 | Every package in isolation — skills, pipeline, wallet crypto, chain adapters, intent parsing, agent SDK |
+| Integration | 67 | Full-stack flows — boot, wallet lifecycle, command routing, skill pipeline, NL-to-skill, background services |
+| Journey | 6 | Persona-based E2E: beginner onboarding, active DeFi trader, portfolio manager, agent creator, DAO treasury |
+
+Integration tests use a harness that mirrors the production boot sequence with real internal components, mocking only external boundaries (RPCs, HTTP APIs, LLM).
+
+## Cloud Plugin
+
+Install `@chainclaw/cloud-plugin` to add the **marketplace** skill — browse, subscribe to, and rank community agents. See [chainclaw-xyz/cloud](https://github.com/chainclaw-xyz/cloud) for details.
 
 ## Tech Stack
 
@@ -204,8 +334,9 @@ Health check at `http://localhost:9090/health`.
 | Validation | Zod |
 | Telegram | grammY |
 | Discord | discord.js |
-| LLM | Anthropic SDK, OpenAI SDK, Ollama (local) |
+| LLM | Anthropic SDK, OpenAI SDK, Ollama |
 | Testing | Vitest |
+| Docker | Multi-stage build, Caddy for TLS |
 
 ## License
 
