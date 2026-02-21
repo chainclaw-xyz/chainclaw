@@ -105,7 +105,7 @@ export function createWebChat(
   // Resolve the bundled HTML file
   const defaultHtmlPath = resolve(
     dirname(fileURLToPath(import.meta.url)),
-    "../../web-chat.html",
+    "../web-chat.html",
   );
   const htmlPath = options.staticHtmlPath ?? defaultHtmlPath;
   const htmlContent = existsSync(htmlPath) ? readFileSync(htmlPath, "utf-8") : null;
