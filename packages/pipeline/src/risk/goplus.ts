@@ -1,4 +1,4 @@
-import { getLogger } from "@chainclaw/core";
+import { getLogger, fetchWithRetry } from "@chainclaw/core";
 import type { Address } from "viem";
 import type { TokenSafetyReport, RiskDimension } from "./types.js";
 
@@ -52,7 +52,7 @@ export class GoPlusClient {
 
     try {
       const url = `${this.baseUrl}/token_security/${chainId}?contract_addresses=${tokenAddress.toLowerCase()}`;
-      const response = await fetch(url, {
+      const response = await fetchWithRetry(url, {
         headers: { Accept: "application/json" },
       });
 

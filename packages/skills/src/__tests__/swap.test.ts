@@ -4,6 +4,7 @@ import type { SkillExecutionContext } from "../types.js";
 
 vi.mock("@chainclaw/core", () => ({
   getLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+  fetchWithRetry: (...args: unknown[]) => globalThis.fetch(...(args as Parameters<typeof fetch>)),
 }));
 
 vi.mock("../prices.js", () => ({

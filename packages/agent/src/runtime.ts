@@ -114,8 +114,7 @@ export class AgentRuntime {
         continue;
       }
 
-      const skill = this.skillRegistry.get(intent.action);
-      if (!skill) {
+      if (!this.skillRegistry.has(intent.action)) {
         results.push(`I don't have a "${intent.action}" skill yet. This will be available in a future update.`);
         continue;
       }
@@ -137,7 +136,7 @@ export class AgentRuntime {
 
       try {
         logger.info({ action: intent.action, params: intent.params }, "Executing skill");
-        const result = await skill.execute(intent.params, skillContext);
+        const result = await this.skillRegistry.executeSkill(intent.action, intent.params, skillContext);
         results.push(result.message);
       } catch (err) {
         logger.error({ err, action: intent.action }, "Skill execution failed");

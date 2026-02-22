@@ -1,4 +1,4 @@
-import { getLogger } from "@chainclaw/core";
+import { getLogger, fetchWithRetry } from "@chainclaw/core";
 import type { LLMProvider, LLMMessage, LLMTool, LLMResponse } from "./types.js";
 
 const logger = getLogger("llm-ollama");
@@ -53,7 +53,7 @@ export function createOllamaProvider(
         body.tools = ollamaTools;
       }
 
-      const response = await fetch(`${url}/api/chat`, {
+      const response = await fetchWithRetry(`${url}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),

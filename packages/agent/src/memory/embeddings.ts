@@ -3,7 +3,7 @@
  * Uses OpenAI's text-embedding-3-small by default.
  * Ported from OpenClaw's embedding provider pattern.
  */
-import { getLogger } from "@chainclaw/core";
+import { getLogger, fetchWithRetry } from "@chainclaw/core";
 
 const logger = getLogger("embeddings");
 
@@ -37,7 +37,7 @@ export class OpenAIEmbeddings implements EmbeddingProvider {
   }
 
   async embedBatch(texts: string[]): Promise<number[][]> {
-    const response = await fetch("https://api.openai.com/v1/embeddings", {
+    const response = await fetchWithRetry("https://api.openai.com/v1/embeddings", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

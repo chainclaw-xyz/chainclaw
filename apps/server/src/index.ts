@@ -118,6 +118,7 @@ async function main(): Promise<void> {
 
   // ─── Register core skills ─────────────────────────────────
   const skillRegistry = new SkillRegistry();
+  skillRegistry.configureLanes();
   skillRegistry.register(createBalanceSkill(chainManager));
   skillRegistry.register(createSwapSkill(executor, walletManager, config.oneInchApiKey));
   skillRegistry.register(createBridgeSkill(executor, walletManager));
@@ -218,19 +219,18 @@ async function main(): Promise<void> {
 
   // ─── Cron scheduler ─────────────────────────────────────
   const cronService = new CronService(db, async (job) => {
-    const skill = skillRegistry.get(job.skillName);
-    if (!skill) {
+    if (!skillRegistry.has(job.skillName)) {
       return { ok: false, error: `Skill not found: ${job.skillName}` };
     }
     try {
       const defaultAddr = walletManager.getDefaultAddress();
-      await skill.execute(job.skillParams, {
+      const result = await skillRegistry.executeSkill(job.skillName, job.skillParams, {
         userId: job.userId,
         walletAddress: defaultAddr ?? null,
         chainIds: job.chainId ? [job.chainId] : chainManager.getSupportedChains(),
         sendReply: async () => { /* cron jobs don't have a reply channel */ },
       });
-      return { ok: true };
+      return result.success ? { ok: true } : { ok: false, error: result.message };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
     }
@@ -245,9 +245,16 @@ async function main(): Promise<void> {
 
   if (config.telegramBotToken) {
     const telegram = new TelegramAdapter(config.telegramBotToken);
-    // Wire alert notifications directly via the Telegram Bot API
+    // Wire alert notifications through delivery queue for persistence
     alertEngine.setNotifier(async (userId, message) => {
-      await telegram.notify(userId, message);
+      const id = deliveryQueue.enqueue({ channel: "telegram", recipientId: userId, message });
+      try {
+        await telegram.notify(userId, message);
+        deliveryQueue.ack(id);
+      } catch (err) {
+        deliveryQueue.fail(id, err instanceof Error ? err.message : "Unknown error");
+        logger.warn({ err, userId, deliveryId: id }, "Alert delivery failed, queued for retry");
+      }
     });
     channelRegistry.register(telegram);
   }
@@ -278,8 +285,16 @@ async function main(): Promise<void> {
 
   // ─── Recover pending deliveries ──────────────────────────
   deliveryQueue.recoverPending(async (payload) => {
-    logger.info({ channel: payload.channel, recipientId: payload.recipientId }, "Recovering delivery");
-    // Best-effort recovery — actual channel delivery would go here
+    const adapter = channelRegistry.get(payload.channel);
+    if (!adapter) {
+      throw new Error(`No adapter for channel: ${payload.channel}`);
+    }
+    const notifiable = adapter as unknown as { notify?: (userId: string, message: string) => Promise<void> };
+    if (typeof notifiable.notify === "function") {
+      await notifiable.notify(payload.recipientId, payload.message);
+    } else {
+      throw new Error(`Channel ${payload.channel} does not support push delivery`);
+    }
   }).catch((err) => {
     logger.warn({ err }, "Delivery queue recovery failed");
   });

@@ -1,4 +1,4 @@
-import { getLogger } from "@chainclaw/core";
+import { getLogger, fetchWithRetry } from "@chainclaw/core";
 import type { Hex } from "viem";
 
 const logger = getLogger("mev-protection");
@@ -26,7 +26,7 @@ export class MevProtection {
     signedTx: Hex,
   ): Promise<string | null> {
     try {
-      const response = await fetch(this.flashbotsRpcUrl, {
+      const response = await fetchWithRetry(this.flashbotsRpcUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -35,7 +35,7 @@ export class MevProtection {
           method: "eth_sendRawTransaction",
           params: [signedTx],
         }),
-      });
+      }, { maxAttempts: 2 });
 
       if (!response.ok) {
         logger.error({ status: response.status }, "Flashbots RPC error");

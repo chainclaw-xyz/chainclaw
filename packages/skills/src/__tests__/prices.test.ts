@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@chainclaw/core", () => ({
   getLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+  fetchWithRetry: (...args: unknown[]) => globalThis.fetch(...(args as Parameters<typeof fetch>)),
 }));
 
 // We need to reset modules between tests to clear the price cache
