@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { parseEther, parseUnits, type Address, type Hex } from "viem";
-import { getLogger, type SkillResult } from "@chainclaw/core";
+import { getLogger, fetchWithRetry, type SkillResult } from "@chainclaw/core";
 import type { TransactionExecutor } from "@chainclaw/pipeline";
 import type { WalletManager } from "@chainclaw/wallet";
 import type { SkillDefinition, SkillExecutionContext } from "./types.js";
@@ -226,7 +226,7 @@ async function getSwapQuote(
       headers["Authorization"] = `Bearer ${apiKey}`;
     }
 
-    const response = await fetch(
+    const response = await fetchWithRetry(
       `https://api.1inch.dev/swap/v6.0/${chainId}/${endpoint}?${params.toString()}`,
       { headers },
     );

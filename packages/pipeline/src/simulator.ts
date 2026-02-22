@@ -1,4 +1,4 @@
-import { getLogger } from "@chainclaw/core";
+import { getLogger, fetchWithRetry } from "@chainclaw/core";
 import { formatEther, formatUnits } from "viem";
 import type { TransactionRequest, SimulationResult, BalanceChange } from "./types.js";
 
@@ -55,7 +55,7 @@ export class TransactionSimulator {
     const url = `https://api.tenderly.co/api/v1/account/${tenderlyAccount}/project/${tenderlyProject}/simulate`;
 
     try {
-      const response = await fetch(url, {
+      const response = await fetchWithRetry(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

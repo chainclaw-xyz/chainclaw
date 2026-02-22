@@ -246,22 +246,18 @@ export class CommandRouter {
       return;
     }
 
-    const balanceSkill = skillRegistry.get("balance");
-    if (!balanceSkill) {
+    if (!skillRegistry.has("balance")) {
       await ctx.sendReply("Balance skill not available.");
       return;
     }
 
     try {
-      const result = await balanceSkill.execute(
-        {},
-        {
-          userId: ctx.userId,
-          walletAddress: defaultAddr,
-          chainIds: chainManager.getSupportedChains(),
-          sendReply: ctx.sendReply,
-        },
-      );
+      const result = await skillRegistry.executeSkill("balance", {}, {
+        userId: ctx.userId,
+        walletAddress: defaultAddr,
+        chainIds: chainManager.getSupportedChains(),
+        sendReply: ctx.sendReply,
+      });
       await ctx.sendReply(result.message);
     } catch (err) {
       logger.error({ err }, "Balance command failed");

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type Database from "better-sqlite3";
 import { parseUnits, type Address, type Hex } from "viem";
-import { getLogger, type SkillResult } from "@chainclaw/core";
+import { getLogger, fetchWithRetry, type SkillResult } from "@chainclaw/core";
 import type { TransactionExecutor } from "@chainclaw/pipeline";
 import type { WalletManager } from "@chainclaw/wallet";
 import type { SkillDefinition, SkillExecutionContext } from "./types.js";
@@ -232,7 +232,7 @@ export class DcaScheduler {
       headers["Authorization"] = `Bearer ${this.oneInchApiKey}`;
     }
 
-    const response = await fetch(
+    const response = await fetchWithRetry(
       `https://api.1inch.dev/swap/v6.0/${chainId}/${endpoint}?${params.toString()}`,
       { headers },
     );

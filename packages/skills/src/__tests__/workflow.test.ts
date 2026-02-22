@@ -18,8 +18,14 @@ function mockContext(): SkillExecutionContext {
 function createMockRegistry(skills: Record<string, any> = {}) {
   return {
     get: vi.fn((name: string) => skills[name] ?? null),
+    has: vi.fn((name: string) => name in skills),
     list: vi.fn(() => Object.values(skills)),
     register: vi.fn(),
+    executeSkill: vi.fn(async (name: string, params: unknown, context: any) => {
+      const skill = skills[name];
+      if (!skill) return { success: false, message: `Unknown skill: ${name}` };
+      return skill.execute(params, context);
+    }),
   };
 }
 

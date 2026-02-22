@@ -56,9 +56,7 @@ export function createWorkflowSkill(registry: SkillRegistry): SkillDefinition {
       for (let i = 0; i < steps.length; i++) {
         const step = steps[i];
         const stepNum = i + 1;
-        const skill = registry.get(step.skill);
-
-        if (!skill) {
+        if (!registry.has(step.skill)) {
           const msg = `Step ${stepNum}: Unknown skill "${step.skill}"`;
           workflowResult.failedAtStep = stepNum;
           workflowResult.results.push({ step: stepNum, skill: step.skill, success: false, message: msg });
@@ -66,7 +64,7 @@ export function createWorkflowSkill(registry: SkillRegistry): SkillDefinition {
           break;
         }
 
-        if (skill.name === "workflow") {
+        if (step.skill === "workflow") {
           const msg = `Step ${stepNum}: Cannot nest workflows`;
           workflowResult.failedAtStep = stepNum;
           workflowResult.results.push({ step: stepNum, skill: step.skill, success: false, message: msg });
@@ -77,7 +75,7 @@ export function createWorkflowSkill(registry: SkillRegistry): SkillDefinition {
         await context.sendReply(`*Step ${stepNum}/${steps.length}:* ${step.skill}...`);
 
         try {
-          const result = await skill.execute(step.params, context);
+          const result = await registry.executeSkill(step.skill, step.params, context);
 
           workflowResult.results.push({
             step: stepNum,

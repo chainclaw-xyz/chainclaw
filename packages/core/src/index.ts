@@ -34,6 +34,11 @@ export {
 } from "./command-queue.js";
 export { DiagnosticCollector, type DiagnosticSnapshot } from "./diagnostics.js";
 export {
+  fetchWithRetry,
+  HttpRetryError,
+  type FetchWithRetryOptions,
+} from "./fetch.js";
+export {
   registerHook,
   unregisterHook,
   clearHooks,

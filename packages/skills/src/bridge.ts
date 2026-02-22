@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { type Address, type Hex } from "viem";
-import { getLogger, type SkillResult } from "@chainclaw/core";
+import { getLogger, fetchWithRetry, type SkillResult } from "@chainclaw/core";
 import type { TransactionExecutor } from "@chainclaw/pipeline";
 import type { WalletManager } from "@chainclaw/wallet";
 import type { SkillDefinition, SkillExecutionContext } from "./types.js";
@@ -273,7 +273,7 @@ async function getLiFiQuote(
       order: "RECOMMENDED",
     });
 
-    const response = await fetch(`https://li.quest/v1/quote?${params.toString()}`, {
+    const response = await fetchWithRetry(`https://li.quest/v1/quote?${params.toString()}`, {
       headers: { Accept: "application/json" },
     });
 
