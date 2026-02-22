@@ -23,6 +23,9 @@ export {
   type AllowlistMatchSource,
 } from "./security.js";
 
+// Delivery
+export { DeliveryQueue, type DeliveryPayload, type DeliveryStatus, type DeliverFn } from "./delivery-queue.js";
+
 // Shared
 export { CommandRouter } from "./router.js";
 export { RateLimiter } from "./rate-limiter.js";

@@ -14,7 +14,8 @@ export type HookEventType =
   | "alert"
   | "channel"
   | "cron"
-  | "lifecycle";
+  | "lifecycle"
+  | "diag";
 
 export interface HookEvent {
   /** Event category */
@@ -61,6 +62,11 @@ export const HookEvents = {
   LIFECYCLE_STARTUP: "lifecycle:startup",
   LIFECYCLE_SHUTDOWN: "lifecycle:shutdown",
   LIFECYCLE_CONFIG_CHANGED: "lifecycle:config_changed",
+
+  // Diagnostics
+  DIAG_FETCH_RETRY: "diag:fetch_retry",
+  DIAG_QUEUE_ENQUEUE: "diag:queue_enqueue",
+  DIAG_DELIVERY_RETRY: "diag:delivery_retry",
 } as const;
 
 // ─── Hook Registry (singleton) ───────────────────────────────
