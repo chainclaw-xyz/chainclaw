@@ -34,6 +34,8 @@ function createMockDeps(overrides?: Partial<GatewayDeps>): GatewayDeps {
     skillRegistry: {
       list: vi.fn(() => []),
       get: vi.fn(() => undefined),
+      has: vi.fn(() => false),
+      executeSkill: vi.fn(async () => ({ success: false, message: "not available" })),
     } as any,
     ...overrides,
   };
@@ -230,18 +232,18 @@ describe("CommandRouter", () => {
 
     it("executes balance skill and returns result", async () => {
       (deps.walletManager.getDefaultAddress as any).mockReturnValue("0xABC");
-      const mockSkill = { execute: vi.fn(async () => ({ success: true, message: "ETH: 2.5" })) };
-      (deps.skillRegistry.get as any).mockReturnValue(mockSkill);
+      (deps.skillRegistry.has as any).mockReturnValue(true);
+      (deps.skillRegistry.executeSkill as any).mockResolvedValue({ success: true, message: "ETH: 2.5" });
       await router.handleBalance(ctx);
-      expect(mockSkill.execute).toHaveBeenCalled();
+      expect(deps.skillRegistry.executeSkill).toHaveBeenCalledWith("balance", {}, expect.objectContaining({ userId: "user-123" }));
       const reply = (ctx.sendReply as any).mock.calls[0][0] as string;
       expect(reply).toContain("ETH: 2.5");
     });
 
     it("handles balance skill execution error", async () => {
       (deps.walletManager.getDefaultAddress as any).mockReturnValue("0xABC");
-      const mockSkill = { execute: vi.fn(async () => { throw new Error("RPC error"); }) };
-      (deps.skillRegistry.get as any).mockReturnValue(mockSkill);
+      (deps.skillRegistry.has as any).mockReturnValue(true);
+      (deps.skillRegistry.executeSkill as any).mockRejectedValue(new Error("RPC error"));
       await router.handleBalance(ctx);
       const reply = (ctx.sendReply as any).mock.calls[0][0] as string;
       expect(reply).toContain("Failed to fetch balances");

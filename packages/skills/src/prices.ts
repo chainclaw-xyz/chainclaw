@@ -1,4 +1,4 @@
-import { getLogger } from "@chainclaw/core";
+import { getLogger, fetchWithRetry } from "@chainclaw/core";
 
 const logger = getLogger("prices");
 
@@ -47,7 +47,7 @@ export async function getTokenPrice(symbol: string): Promise<number | null> {
   }
 
   try {
-    const response = await fetch(
+    const response = await fetchWithRetry(
       `https://api.coingecko.com/api/v3/simple/price?ids=${geckoId}&vs_currencies=usd`,
     );
 

@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { getLogger } from "@chainclaw/core";
+import { getLogger, fetchWithRetry } from "@chainclaw/core";
 
 const logger = getLogger("historical-data");
 
@@ -86,7 +86,7 @@ export class HistoricalDataProvider {
 
     const url = `https://api.coingecko.com/api/v3/coins/${geckoId}/market_chart/range?vs_currency=usd&from=${startTs}&to=${endTs}`;
 
-    const response = await fetch(url);
+    const response = await fetchWithRetry(url);
     if (!response.ok) {
       throw new Error(`CoinGecko API error: ${response.status} ${response.statusText}`);
     }
