@@ -5,6 +5,8 @@ import { IntentParser } from "./intent/parser.js";
 import type { ParsedIntents } from "./intent/types.js";
 import { ConversationMemory } from "./memory/conversation.js";
 import { PreferencesStore } from "./memory/preferences.js";
+import { SemanticMemory } from "./memory/semantic-memory.js";
+import type { EmbeddingProvider } from "./memory/embeddings.js";
 import type Database from "better-sqlite3";
 
 const logger = getLogger("runtime");
@@ -19,17 +21,24 @@ export class AgentRuntime {
   private intentParser: IntentParser;
   private memory: ConversationMemory;
   private preferences: PreferencesStore;
+  private semanticMemory: SemanticMemory | null = null;
   private skillRegistry: SkillRegistry;
 
   constructor(
     llm: LLMProvider,
     db: Database.Database,
     skillRegistry: SkillRegistry,
+    embeddingProvider?: EmbeddingProvider | null,
   ) {
     this.memory = new ConversationMemory(db);
     this.preferences = new PreferencesStore(db);
     this.skillRegistry = skillRegistry;
     this.intentParser = new IntentParser(llm, skillRegistry.list());
+
+    if (embeddingProvider) {
+      this.semanticMemory = new SemanticMemory(db, embeddingProvider);
+      logger.info("Semantic memory enabled");
+    }
   }
 
   async handleMessage(
@@ -50,14 +59,29 @@ export class AgentRuntime {
     // Get conversation history for context
     const history = this.memory.getMessagesForLLM(userId, 10);
 
-    // Parse intent(s)
-    const parsed = await this.intentParser.parse(message, history.slice(0, -1));
+    // Recall relevant semantic memories (if available)
+    let relevantMemories: string[] = [];
+    if (this.semanticMemory) {
+      relevantMemories = await this.semanticMemory.recall(userId, message, 3);
+      if (relevantMemories.length > 0) {
+        logger.debug({ userId, count: relevantMemories.length }, "Relevant memories found");
+      }
+    }
+
+    // Parse intent(s) with memory context
+    const parsed = await this.intentParser.parse(message, history.slice(0, -1), relevantMemories);
 
     // Handle the parsed result
     const response = await this.executeIntents(parsed, userId, context);
 
     // Save assistant response to memory
     this.memory.addMessage(userId, "assistant", response.text);
+
+    // Store the exchange in semantic memory for future recall
+    if (this.semanticMemory) {
+      const exchange = `User: ${message}\nAssistant: ${response.text}`;
+      void this.semanticMemory.remember(userId, exchange);
+    }
 
     return response;
   }
@@ -140,5 +164,8 @@ export class AgentRuntime {
 
   clearHistory(userId: string): void {
     this.memory.clear(userId);
+    if (this.semanticMemory) {
+      this.semanticMemory.clear(userId);
+    }
   }
 }

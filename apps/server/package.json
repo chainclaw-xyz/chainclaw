@@ -18,6 +18,7 @@
     "@chainclaw/agent-sdk": "*",
     "@chainclaw/chains": "*",
     "@chainclaw/core": "*",
+    "@chainclaw/cron": "*",
     "@chainclaw/gateway": "*",
     "@chainclaw/pipeline": "*",
     "@chainclaw/skills": "*",

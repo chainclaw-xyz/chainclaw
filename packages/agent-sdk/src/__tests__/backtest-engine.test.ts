@@ -6,7 +6,6 @@ import { createSampleDcaAgent } from "../samples/dca-agent.js";
 
 // Mock fetch globally
 const mockFetch = vi.fn();
-vi.stubGlobal("fetch", mockFetch);
 
 // Mock @chainclaw/core logger
 vi.mock("@chainclaw/core", () => ({
@@ -24,6 +23,7 @@ describe("BacktestEngine", () => {
   let engine: BacktestEngine;
 
   beforeEach(() => {
+    vi.stubGlobal("fetch", mockFetch);
     db = new Database(":memory:");
     db.pragma("journal_mode = WAL");
     dataProvider = new HistoricalDataProvider(db);

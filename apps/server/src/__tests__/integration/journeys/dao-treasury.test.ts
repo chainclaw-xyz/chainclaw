@@ -5,7 +5,7 @@
  * Journey: /balance → portfolio → risk_check → history CSV
  * All commands use platform: "discord" to test Discord context
  */
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from "vitest";
 import { createMockAdapterControls } from "../mocks/mock-chain-adapter.js";
 import { ETH_BALANCE_2ETH, USDC_BALANCE_5K, BASE_ETH_BALANCE, ARB_ETH_BALANCE, OP_ETH_BALANCE, STANDARD_PRICES } from "../mocks/canned-responses.js";
 
@@ -54,6 +54,10 @@ describe("Dao's treasury management journey (Discord)", () => {
     vi.stubGlobal("fetch", harness.fetchRouter.handler);
 
     harness.walletManager.generateWalletFromMnemonic("dao-treasury");
+  });
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", harness.fetchRouter.handler);
   });
 
   afterAll(() => {

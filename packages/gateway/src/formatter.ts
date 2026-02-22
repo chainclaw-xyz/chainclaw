@@ -6,7 +6,7 @@
  * This module converts to the correct format for each platform.
  */
 
-export type Platform = "telegram" | "discord" | "web";
+export type Platform = string;
 
 export function formatMessage(text: string, platform: Platform): string {
   switch (platform) {
@@ -17,8 +17,19 @@ export function formatMessage(text: string, platform: Platform): string {
     case "discord":
       return toDiscordMarkdown(text);
 
+    case "slack":
+      return toSlackMrkdwn(text);
+
+    case "whatsapp":
+      // WhatsApp uses same bold/italic as Telegram (*bold*, _italic_)
+      return text;
+
     case "web":
       return toHtml(text);
+
+    default:
+      // Unknown platforms get plain text (strip markdown)
+      return text;
   }
 }
 
@@ -29,6 +40,16 @@ export function formatMessage(text: string, platform: Platform): string {
 function toDiscordMarkdown(text: string): string {
   // Convert *bold* → **bold** (but not **already bold**)
   return text.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "**$1**");
+}
+
+/**
+ * Telegram markdown → Slack mrkdwn.
+ * Slack uses *bold* (same), _italic_ (same), `code` (same), but links are <url|text>.
+ */
+function toSlackMrkdwn(text: string): string {
+  // Telegram and Slack use the same basic markdown. Main difference is links,
+  // but ChainClaw doesn't generate links in responses, so pass through.
+  return text;
 }
 
 /**

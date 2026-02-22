@@ -18,9 +18,20 @@ export class IntentParser {
   async parse(
     userMessage: string,
     conversationHistory: LLMMessage[] = [],
+    relevantMemories: string[] = [],
   ): Promise<ParsedIntents> {
+    let systemContent = this.systemPrompt;
+
+    // Inject relevant memories if available
+    if (relevantMemories.length > 0) {
+      const memoriesSection = relevantMemories
+        .map((m, i) => `[${i + 1}] ${m}`)
+        .join("\n\n");
+      systemContent += `\n\n## Relevant Context from Past Interactions\n${memoriesSection}`;
+    }
+
     const messages: LLMMessage[] = [
-      { role: "system", content: this.systemPrompt },
+      { role: "system", content: systemContent },
       ...conversationHistory,
       { role: "user", content: userMessage },
     ];
