@@ -4,7 +4,7 @@
  * Persona: 27-year-old full-stack developer, DeFi enthusiast
  * Journey: backtest → agent start → agent status → stop agent
  */
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from "vitest";
 import { createMockAdapterControls } from "../mocks/mock-chain-adapter.js";
 import { STANDARD_PRICES } from "../mocks/canned-responses.js";
 
@@ -43,6 +43,10 @@ describe("Dev's agent creator journey", () => {
   beforeAll(() => {
     harness = createTestHarness({ adapterControls });
     harness.fetchRouter.onCoinGecko(STANDARD_PRICES);
+    vi.stubGlobal("fetch", harness.fetchRouter.handler);
+  });
+
+  beforeEach(() => {
     vi.stubGlobal("fetch", harness.fetchRouter.handler);
   });
 

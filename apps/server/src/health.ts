@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { getLogger } from "@chainclaw/core";
 import type { SkillRegistry } from "@chainclaw/skills";
+import type { ChannelHealthMonitor } from "@chainclaw/gateway";
 
 const logger = getLogger("health");
 
@@ -9,6 +10,7 @@ export interface HealthDeps {
   agentRuntime: unknown;
   channels: string[];
   startedAt: number;
+  healthMonitor?: ChannelHealthMonitor;
 }
 
 export interface HealthServer {
@@ -21,6 +23,17 @@ export function createHealthServer(port: number, deps: HealthDeps, host: string 
     res.setHeader("Content-Type", "application/json");
 
     if (req.method === "GET" && req.url === "/health") {
+      const channelHealth = deps.healthMonitor
+        ? Object.fromEntries(
+            deps.healthMonitor.getAllSnapshots().map((s) => [s.channelId, {
+              connected: s.status.connected,
+              lastMessageAt: s.status.lastMessageAt,
+              lastError: s.status.lastError,
+              checkedAt: s.checkedAt,
+            }]),
+          )
+        : undefined;
+
       res.writeHead(200);
       res.end(
         JSON.stringify({
@@ -28,6 +41,7 @@ export function createHealthServer(port: number, deps: HealthDeps, host: string 
           uptime: Math.floor((Date.now() - deps.startedAt) / 1000),
           skills: deps.skillRegistry.list().length,
           channels: deps.channels,
+          channelHealth,
           agent: deps.agentRuntime ? "active" : "disabled",
           timestamp: new Date().toISOString(),
         }),

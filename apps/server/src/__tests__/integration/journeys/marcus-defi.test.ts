@@ -4,7 +4,7 @@
  * Persona: 34-year-old fintech engineer, 3+ years DeFi
  * Journey: import wallet → portfolio → swap quote → DCA → workflow → history
  */
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from "vitest";
 import { generatePrivateKey } from "viem/accounts";
 import { createMockAdapterControls } from "../mocks/mock-chain-adapter.js";
 import { ETH_BALANCE_2ETH, USDC_BALANCE_5K, BASE_ETH_BALANCE, ARB_ETH_BALANCE, OP_ETH_BALANCE, STANDARD_PRICES } from "../mocks/canned-responses.js";
@@ -52,6 +52,10 @@ describe("Marcus's active DeFi journey", () => {
     harness.fetchRouter.onCoinGecko(STANDARD_PRICES);
     harness.fetchRouter.onGoPlus();
     harness.fetchRouter.on1inchQuote("1000000000000000000", "3000000000");
+    vi.stubGlobal("fetch", harness.fetchRouter.handler);
+  });
+
+  beforeEach(() => {
     vi.stubGlobal("fetch", harness.fetchRouter.handler);
   });
 

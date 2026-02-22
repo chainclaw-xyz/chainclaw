@@ -16,6 +16,14 @@ const configSchema = z.object({
   webChatEnabled: z.boolean().default(false),
   webChatPort: z.number().default(8080),
 
+  // Slack
+  slackBotToken: z.string().optional(),
+  slackAppToken: z.string().optional(),
+
+  // WhatsApp
+  whatsappEnabled: z.boolean().default(false),
+  whatsappAuthDir: z.string().default("./data/whatsapp-auth"),
+
   // Wallet
   walletPassword: z.string().min(8, "WALLET_PASSWORD must be at least 8 characters"),
   walletDir: z.string().default("./data/wallets"),
@@ -32,6 +40,10 @@ const configSchema = z.object({
   openaiApiKey: z.string().optional(),
   ollamaBaseUrl: z.string().url().optional(),
   llmModel: z.string().optional(),
+
+  // Embeddings (for semantic memory)
+  embeddingApiKey: z.string().optional(),
+  embeddingModel: z.string().optional(),
 
   // Tenderly (for tx simulation)
   tenderlyApiKey: z.string().optional(),
@@ -62,6 +74,10 @@ const configSchema = z.object({
   // Solana
   solanaRpcUrl: z.string().url().optional(),
 
+  // Security
+  securityMode: z.enum(["open", "allowlist"]).default("open"),
+  securityAllowlist: z.array(z.string()).default([]),
+
   // Data Pipeline
   dataPipelineEnabled: z.boolean().default(false),
   outcomeLabelIntervalMs: z.number().default(300_000),
@@ -81,6 +97,10 @@ export function loadConfig(): Config {
     discordClientId: process.env.DISCORD_CLIENT_ID || undefined,
     webChatEnabled: process.env.WEB_CHAT_ENABLED === "true",
     webChatPort: process.env.WEB_CHAT_PORT ? Number(process.env.WEB_CHAT_PORT) : 8080,
+    slackBotToken: process.env.SLACK_BOT_TOKEN || undefined,
+    slackAppToken: process.env.SLACK_APP_TOKEN || undefined,
+    whatsappEnabled: process.env.WHATSAPP_ENABLED === "true",
+    whatsappAuthDir: process.env.WHATSAPP_AUTH_DIR || "./data/whatsapp-auth",
     walletPassword: process.env.WALLET_PASSWORD,
     walletDir: process.env.WALLET_DIR || "./data/wallets",
     ethRpcUrl: process.env.ETH_RPC_URL || "https://eth.llamarpc.com",
@@ -92,6 +112,8 @@ export function loadConfig(): Config {
     openaiApiKey: process.env.OPENAI_API_KEY,
     ollamaBaseUrl: process.env.OLLAMA_BASE_URL,
     llmModel: process.env.LLM_MODEL,
+    embeddingApiKey: process.env.EMBEDDING_API_KEY || process.env.OPENAI_API_KEY || undefined,
+    embeddingModel: process.env.EMBEDDING_MODEL || undefined,
     tenderlyApiKey: process.env.TENDERLY_API_KEY,
     tenderlyAccount: process.env.TENDERLY_ACCOUNT,
     tenderlyProject: process.env.TENDERLY_PROJECT,
@@ -105,6 +127,10 @@ export function loadConfig(): Config {
       : 9090,
     skillsDir: process.env.SKILLS_DIR || undefined,
     solanaRpcUrl: process.env.SOLANA_RPC_URL || undefined,
+    securityMode: process.env.SECURITY_MODE || "open",
+    securityAllowlist: process.env.SECURITY_ALLOWLIST
+      ? process.env.SECURITY_ALLOWLIST.split(",").map((s: string) => s.trim()).filter(Boolean)
+      : [],
     dataPipelineEnabled: process.env.DATA_PIPELINE_ENABLED === "true",
     outcomeLabelIntervalMs: process.env.OUTCOME_LABEL_INTERVAL_MS
       ? Number(process.env.OUTCOME_LABEL_INTERVAL_MS)

@@ -1,4 +1,4 @@
-import { getLogger } from "@chainclaw/core";
+import { getLogger, triggerHook, createHookEvent } from "@chainclaw/core";
 import {
   createPublicClient,
   http,
@@ -67,8 +67,10 @@ export class TransactionExecutor {
 
     // 1. Simulate
     logger.info({ chainId: tx.chainId, to: tx.to }, "Step 1: Simulating transaction");
+    void triggerHook(createHookEvent("tx", "before_simulate", { chainId: tx.chainId, to: tx.to, userId: meta.userId }));
     const simResult = await this.simulator.simulate(tx);
     const preview = this.simulator.formatPreview(simResult);
+    void triggerHook(createHookEvent("tx", "after_simulate", { chainId: tx.chainId, success: simResult.success, userId: meta.userId }));
 
     if (callbacks.onSimulated) {
       await callbacks.onSimulated(simResult, preview);
@@ -196,6 +198,8 @@ export class TransactionExecutor {
         logger.info("Using Flashbots Protect for MEV protection");
       }
 
+      void triggerHook(createHookEvent("tx", "before_broadcast", { txId, chainId: tx.chainId, userId: meta.userId }));
+
       const nonce = await this.nonceManager.getNonce(tx.chainId, tx.from);
 
       const hash = await signer.sendTransaction({
@@ -239,14 +243,17 @@ export class TransactionExecutor {
           await callbacks.onConfirmed(hash, receipt.blockNumber);
         }
 
+        void triggerHook(createHookEvent("tx", "confirmed", { txId, hash, blockNumber: Number(receipt.blockNumber), userId: meta.userId }));
         return { txId, hash, success: true, message: `Transaction confirmed in block ${receipt.blockNumber}` };
       } else {
         this.txLog.updateStatus(txId, "failed", { error: "Transaction reverted" });
+        void triggerHook(createHookEvent("tx", "failed", { txId, hash, error: "Transaction reverted", userId: meta.userId }));
         return { txId, hash, success: false, message: "Transaction reverted on-chain" };
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Unknown error";
       this.txLog.updateStatus(txId, "failed", { error: errorMsg });
+      void triggerHook(createHookEvent("tx", "failed", { txId, error: errorMsg, userId: meta.userId }));
 
       if (callbacks.onFailed) {
         await callbacks.onFailed(errorMsg);

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from "vitest";
 import { createMockAdapterControls } from "../mocks/mock-chain-adapter.js";
 import { ETH_BALANCE_1ETH, STANDARD_PRICES } from "../mocks/canned-responses.js";
 
@@ -54,6 +54,10 @@ describe("Natural language to skill execution", () => {
 
     // Create a wallet
     harness.walletManager.generateWalletFromMnemonic("nl-test-wallet");
+  });
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", harness.fetchRouter.handler);
   });
 
   afterAll(() => {

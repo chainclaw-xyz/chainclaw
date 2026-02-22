@@ -11,9 +11,26 @@ const logger = getLogger("router");
 export class CommandRouter {
   constructor(private deps: GatewayDeps) {}
 
+  /**
+   * Check if the sender is allowed by the security guard.
+   * Returns true if blocked (caller should stop processing).
+   */
+  private async checkBlocked(ctx: ChannelContext): Promise<boolean> {
+    const guard = this.deps.securityGuard;
+    if (!guard) return false;
+
+    if (!guard.isAllowed(ctx.userId, ctx.userName, ctx.platform)) {
+      logger.info({ userId: ctx.userId, platform: ctx.platform }, "Blocked by security guard");
+      await ctx.sendReply("Access denied. You are not on the allowlist for this bot.");
+      return true;
+    }
+    return false;
+  }
+
   // ─── /start ────────────────────────────────────────────────
 
   async handleStart(ctx: ChannelContext): Promise<void> {
+    if (await this.checkBlocked(ctx)) return;
     const { walletManager, skillRegistry, agentRuntime } = this.deps;
     const hasWallet = walletManager.listWallets().length > 0;
     const hasLLM = !!agentRuntime;
@@ -77,6 +94,7 @@ export class CommandRouter {
   // ─── /help ─────────────────────────────────────────────────
 
   async handleHelp(ctx: ChannelContext): Promise<void> {
+    if (await this.checkBlocked(ctx)) return;
     const skills = this.deps.skillRegistry.list();
     const skillList = skills
       .map((s) => `  *${s.name}* - ${s.description}`)
@@ -118,6 +136,7 @@ export class CommandRouter {
       onImportMessage?: () => Promise<void>;
     },
   ): Promise<void> {
+    if (await this.checkBlocked(ctx)) return;
     const { walletManager } = this.deps;
     const subcommand = args[0]?.toLowerCase();
 
@@ -219,6 +238,7 @@ export class CommandRouter {
   // ─── /balance ──────────────────────────────────────────────
 
   async handleBalance(ctx: ChannelContext): Promise<void> {
+    if (await this.checkBlocked(ctx)) return;
     const { walletManager, chainManager, skillRegistry } = this.deps;
     const defaultAddr = walletManager.getDefaultAddress();
     if (!defaultAddr) {
@@ -252,6 +272,7 @@ export class CommandRouter {
   // ─── /clear ────────────────────────────────────────────────
 
   async handleClear(ctx: ChannelContext): Promise<void> {
+    if (await this.checkBlocked(ctx)) return;
     if (this.deps.agentRuntime) {
       this.deps.agentRuntime.clearHistory(ctx.userId);
       await ctx.sendReply("Conversation history cleared.");
@@ -263,6 +284,7 @@ export class CommandRouter {
   // ─── Natural language (catch-all) ──────────────────────────
 
   async handleMessage(ctx: ChannelContext, text: string): Promise<void> {
+    if (await this.checkBlocked(ctx)) return;
     const { agentRuntime, walletManager, chainManager } = this.deps;
 
     if (!agentRuntime) {
