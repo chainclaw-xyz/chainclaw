@@ -25,6 +25,6 @@ export function createLLMProvider(config: Config): LLMProvider {
       return createOllamaProvider(baseUrl, config.llmModel);
     }
     default:
-      throw new Error(`Unknown LLM provider: ${config.llmProvider}`);
+      throw new Error(`Unknown LLM provider: ${String(config.llmProvider)}`);
   }
 }

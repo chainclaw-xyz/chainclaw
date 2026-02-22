@@ -148,9 +148,11 @@ export function createWebChat(
     // Send welcome
     send(ws, { type: "reply", text: "Connected to ChainClaw. Type /help for available commands." });
 
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
     ws.on("message", async (raw) => {
       let payload: InboundPayload;
       try {
+        // eslint-disable-next-line @typescript-eslint/no-base-to-string
         payload = JSON.parse(String(raw)) as InboundPayload;
       } catch {
         send(ws, { type: "reply", text: "Invalid message format. Send JSON: { type: \"message\", text: \"...\" }" });

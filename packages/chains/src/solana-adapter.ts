@@ -6,6 +6,16 @@ const logger = getLogger("solana-adapter");
 
 const DEFAULT_RPC = "https://api.mainnet-beta.solana.com";
 
+interface ParsedTokenInfo {
+  mint: string;
+  tokenAmount: {
+    amount: string;
+    decimals: number;
+    uiAmount: number;
+    uiAmountString: string;
+  };
+}
+
 export function createSolanaAdapter(rpcUrl?: string): ChainAdapter {
   const connection = new Connection(rpcUrl || DEFAULT_RPC);
 
@@ -39,11 +49,11 @@ export function createSolanaAdapter(rpcUrl?: string): ChainAdapter {
 
         return tokenAccounts.value
           .filter((account) => {
-            const info = account.account.data.parsed?.info;
+            const info = (account.account.data as { parsed?: { info?: ParsedTokenInfo } }).parsed?.info;
             return info && Number(info.tokenAmount?.uiAmount) > 0;
           })
           .map((account) => {
-            const info = account.account.data.parsed.info;
+            const info = (account.account.data as { parsed: { info: ParsedTokenInfo } }).parsed.info;
             return {
               symbol: info.mint.slice(0, 6), // Shortened mint as symbol fallback
               name: info.mint,

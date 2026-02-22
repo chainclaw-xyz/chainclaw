@@ -26,7 +26,7 @@ export function createSampleDcaAgent(options?: {
         type: "price_feed",
         name: "target_price",
         description: `Current ${targetToken} price`,
-        fetch: async () => null, // Populated by runner from live/historical prices
+        fetch: () => Promise.resolve(null), // Populated by runner from live/historical prices
       },
     ],
 
@@ -43,12 +43,12 @@ export function createSampleDcaAgent(options?: {
       evaluationIntervalMs: 7 * 24 * 60 * 60 * 1000, // Weekly
       watchlist: [targetToken],
 
-      evaluate: async (context: StrategyContext): Promise<StrategyDecision[]> => {
+      evaluate: (context: StrategyContext): Promise<StrategyDecision[]> => {
         const price = context.prices[targetToken.toUpperCase()];
-        if (!price) return [];
+        if (!price) return Promise.resolve([]);
 
         // Simple DCA: always buy a fixed amount
-        return [
+        return Promise.resolve([
           {
             action: "buy",
             token: targetToken,
@@ -65,7 +65,7 @@ export function createSampleDcaAgent(options?: {
               },
             ],
           },
-        ];
+        ]);
       },
     },
   };

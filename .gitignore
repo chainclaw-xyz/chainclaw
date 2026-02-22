@@ -24,5 +24,8 @@ Thumbs.db
 *.swp
 *.swo
 
+# Coverage
+coverage/
+
 # Logs
 *.log

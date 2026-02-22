@@ -19,7 +19,10 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - run: npm audit --audit-level=moderate
+        continue-on-error: true
       - run: npx turbo build
+      - run: npx turbo lint
       - run: npx turbo test
 
   docker:
@@ -31,3 +34,24 @@ jobs:
 
       - name: Build Docker image
         run: docker build -t chainclaw:ci .
+
+  smoke:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Create smoke env
+        run: |
+          echo "WALLET_PASSWORD=smoke-test-password-12345" > .env
+          echo "WEB_CHAT_ENABLED=true" >> .env
+          echo "LOG_LEVEL=info" >> .env
+
+      - name: Run smoke test
+        run: bash scripts/smoke-test.sh

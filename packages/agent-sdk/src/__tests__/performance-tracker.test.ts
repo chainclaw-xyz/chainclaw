@@ -85,9 +85,9 @@ describe("PerformanceTracker", () => {
 
     const trades = tracker.getAgentTrades("test-1");
     expect(trades).toHaveLength(1);
-    expect(trades[0]!.token).toBe("ETH");
-    expect(trades[0]!.amountUsd).toBe(100);
-    expect(trades[0]!.signals).toHaveLength(1);
+    expect(trades[0].token).toBe("ETH");
+    expect(trades[0].amountUsd).toBe(100);
+    expect(trades[0].signals).toHaveLength(1);
   });
 
   it("logs and retrieves reasoning traces", () => {
@@ -103,7 +103,7 @@ describe("PerformanceTracker", () => {
 
     const traces = tracker.getReasoningTraces("test-1");
     expect(traces).toHaveLength(1);
-    expect(traces[0]!.reasoning).toBe("Price looks good for DCA entry");
+    expect(traces[0].reasoning).toBe("Price looks good for DCA entry");
   });
 
   it("computes metrics from trades", () => {

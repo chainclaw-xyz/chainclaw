@@ -65,7 +65,7 @@ export class WalletManager {
   generateWalletFromMnemonic(label: string): { wallet: WalletInfo; mnemonic: string } {
     const mnemonic = generateMnemonic(english);
     const account = mnemonicToAccount(mnemonic);
-    const privateKey = `0x${Buffer.from(account.getHdKey().privateKey!).toString("hex")}` as `0x${string}`;
+    const privateKey = `0x${Buffer.from(account.getHdKey().privateKey!).toString("hex")}`;
 
     const wallet = this.storeWallet(privateKey, account.address, label);
     return { wallet, mnemonic };

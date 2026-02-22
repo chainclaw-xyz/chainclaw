@@ -10,7 +10,7 @@ function createMockLLM(
 ): LLMProvider {
   return {
     name: "mock",
-    async chat(messages: LLMMessage[], tools?: LLMTool[]): Promise<LLMResponse> {
+    async chat(messages: LLMMessage[], _tools?: LLMTool[]): Promise<LLMResponse> {
       const userMessage = messages.filter((m) => m.role === "user").pop()?.content ?? "";
 
       // Find matching response by checking if user message contains any key

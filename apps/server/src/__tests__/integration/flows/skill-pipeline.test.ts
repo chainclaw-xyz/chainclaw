@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { createMockAdapterControls } from "../mocks/mock-chain-adapter.js";
 import { ETH_BALANCE_1ETH, USDC_BALANCE_5K, BASE_ETH_BALANCE, STANDARD_PRICES } from "../mocks/canned-responses.js";
-import { FetchRouter } from "../mocks/fetch-router.js";
 
 const adapterControls = createMockAdapterControls();
 
@@ -39,7 +38,6 @@ vi.mock("viem", async (importOriginal) => {
 });
 
 import { createTestHarness, type TestHarness } from "../harness.js";
-import { createTestCtx } from "../context-factory.js";
 
 describe("Skill execution through real SkillRegistry", () => {
   let harness: TestHarness;

@@ -39,7 +39,6 @@ vi.mock("viem", async (importOriginal) => {
 
 import { createTestHarness, type TestHarness } from "../harness.js";
 import { createTestCtx } from "../context-factory.js";
-import { FetchRouter } from "../mocks/fetch-router.js";
 
 describe("Natural language to skill execution", () => {
   let harness: TestHarness;

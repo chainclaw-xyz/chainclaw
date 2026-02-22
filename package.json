@@ -12,7 +12,9 @@
     "dev": "turbo dev",
     "test": "turbo test",
     "lint": "turbo lint",
-    "clean": "turbo clean"
+    "clean": "turbo clean",
+    "changeset": "changeset",
+    "version-packages": "changeset version"
   },
   "repository": {
     "type": "git",
@@ -24,6 +26,12 @@
     "node": ">=20.0.0"
   },
   "devDependencies": {
-    "turbo": "^2.8.9"
+    "@changesets/cli": "^2.29.8",
+    "@eslint/js": "^10.0.1",
+    "@vitest/coverage-v8": "^4.0.18",
+    "eslint": "^10.0.1",
+    "globals": "^17.3.0",
+    "turbo": "^2.8.9",
+    "typescript-eslint": "^8.56.0"
   }
 }

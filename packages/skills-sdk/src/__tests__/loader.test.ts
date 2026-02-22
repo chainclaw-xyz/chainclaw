@@ -69,8 +69,8 @@ describe("SkillLoader", () => {
 
     expect(result.loaded).toHaveLength(0);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]!.dir).toBe("bad-skill");
-    expect(result.errors[0]!.error).toContain("chainclaw-skill.json");
+    expect(result.errors[0].dir).toBe("bad-skill");
+    expect(result.errors[0].error).toContain("chainclaw-skill.json");
   });
 
   it("reports error for invalid manifest", async () => {
@@ -86,7 +86,7 @@ describe("SkillLoader", () => {
 
     expect(result.loaded).toHaveLength(0);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]!.dir).toBe("invalid-manifest");
+    expect(result.errors[0].dir).toBe("invalid-manifest");
   });
 
   it("loads a valid skill package with bare SkillDefinition export", async () => {
@@ -153,7 +153,7 @@ describe("SkillLoader", () => {
     await loader.loadFromDirectory(testDir, registry as any);
 
     // The registered skill should be sandboxed — execute should time out
-    const registered = registry.register.mock.calls[0]![0] as any;
+    const registered = registry.register.mock.calls[0][0];
     const result = await registered.execute({}, {
       userId: "u1",
       walletAddress: null,

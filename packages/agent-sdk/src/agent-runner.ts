@@ -194,7 +194,7 @@ export class AgentRunner {
     };
 
     // Evaluate strategy
-    let decisions: StrategyDecision[] = [];
+    let decisions: StrategyDecision[];
     try {
       decisions = await definition.strategy.evaluate(context);
     } catch (err) {
@@ -256,7 +256,7 @@ export class AgentRunner {
 
   private buildPortfolioFromTrades(
     trades: TradeRecord[],
-    prices: Record<string, number>,
+    _prices: Record<string, number>,
   ): Record<string, number> {
     const portfolio: Record<string, number> = {};
 

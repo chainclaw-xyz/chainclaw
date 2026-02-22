@@ -42,10 +42,10 @@ describe("createSampleDcaAgent", () => {
     const decisions = await agent.strategy.evaluate(context);
 
     expect(decisions).toHaveLength(1);
-    expect(decisions[0]!.action).toBe("buy");
-    expect(decisions[0]!.token).toBe("ETH");
-    expect(decisions[0]!.amountUsd).toBe(200);
-    expect(decisions[0]!.reasoning).toContain("$200");
+    expect(decisions[0].action).toBe("buy");
+    expect(decisions[0].token).toBe("ETH");
+    expect(decisions[0].amountUsd).toBe(200);
+    expect(decisions[0].reasoning).toContain("$200");
   });
 
   it("returns empty when no price available", async () => {

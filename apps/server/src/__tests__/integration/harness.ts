@@ -3,7 +3,6 @@
  * Mirrors the production boot sequence (index.ts lines 48-141)
  * with real internal components and mocked external boundaries.
  */
-import { vi } from "vitest";
 import Database from "better-sqlite3";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

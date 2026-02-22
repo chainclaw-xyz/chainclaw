@@ -195,8 +195,8 @@ export function createSwapSkill(
 
 async function getSwapQuote(
   chainId: number,
-  fromAddress: Address | string | undefined,
-  toAddress: Address | string | undefined,
+  fromAddress: string | undefined,
+  toAddress: string | undefined,
   amount: string,
   fromDecimals: number,
   walletAddress: Address,
@@ -227,7 +227,7 @@ async function getSwapQuote(
     }
 
     const response = await fetch(
-      `https://api.1inch.dev/swap/v6.0/${chainId}/${endpoint}?${params}`,
+      `https://api.1inch.dev/swap/v6.0/${chainId}/${endpoint}?${params.toString()}`,
       { headers },
     );
 

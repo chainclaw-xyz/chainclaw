@@ -1,9 +1,7 @@
 import { z } from "zod";
-import { getLogger, type SkillResult } from "@chainclaw/core";
+import type { SkillResult } from "@chainclaw/core";
 import type { AgentRegistryLike, SubscriptionManagerLike, LeaderboardServiceLike } from "./marketplace-types.js";
 import type { SkillDefinition, SkillExecutionContext } from "./types.js";
-
-const logger = getLogger("skill-marketplace");
 
 const marketplaceParams = z.object({
   action: z.enum(["browse", "search", "detail", "subscribe", "unsubscribe", "my-agents", "leaderboard"]),

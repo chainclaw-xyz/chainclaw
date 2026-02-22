@@ -1,6 +1,5 @@
 import { getLogger } from "@chainclaw/core";
 import type {
-  AgentDefinition,
   BacktestConfig,
   BacktestResult,
   BacktestMetrics,
@@ -88,7 +87,7 @@ export class BacktestEngine {
       };
 
       // Evaluate strategy
-      let decisions: StrategyDecision[] = [];
+      let decisions: StrategyDecision[];
       try {
         decisions = await agent.strategy.evaluate(context);
       } catch (err) {
@@ -235,7 +234,7 @@ export class BacktestEngine {
 
     while (lo < hi) {
       const mid = Math.floor((lo + hi) / 2);
-      if (data[mid]!.timestamp < targetTs) {
+      if (data[mid].timestamp < targetTs) {
         lo = mid + 1;
       } else {
         hi = mid;
@@ -244,9 +243,9 @@ export class BacktestEngine {
 
     // Check neighbors for closest match
     const idx = lo;
-    if (idx === 0) return data[0]!.price;
-    const prev = data[idx - 1]!;
-    const curr = data[idx]!;
+    if (idx === 0) return data[0].price;
+    const prev = data[idx - 1];
+    const curr = data[idx];
     return Math.abs(prev.timestamp - targetTs) <= Math.abs(curr.timestamp - targetTs)
       ? prev.price
       : curr.price;
@@ -286,7 +285,7 @@ export class BacktestEngine {
       const slippageMultiplier = 1 + (slippagePercent / 100);
       const executionPrice = marketPrice * slippageMultiplier;
       const feeUsd = decision.amountUsd * (feePercent / 100);
-      const netAmountUsd = decision.amountUsd - feeUsd;
+      const _netAmountUsd = decision.amountUsd - feeUsd;
 
       return {
         id: `bt-${tradeIndex}`,
@@ -354,8 +353,8 @@ export class BacktestEngine {
     // Sharpe ratio (annualized, using daily returns)
     const dailyReturns: number[] = [];
     for (let i = 1; i < equityCurve.length; i++) {
-      const prev = equityCurve[i - 1]!.valueUsd;
-      const curr = equityCurve[i]!.valueUsd;
+      const prev = equityCurve[i - 1].valueUsd;
+      const curr = equityCurve[i].valueUsd;
       if (prev > 0) {
         dailyReturns.push((curr - prev) / prev);
       }

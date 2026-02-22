@@ -2,7 +2,7 @@ import type { Config } from "@chainclaw/core";
 import { getLogger, type PortfolioSummary, type TokenBalance } from "@chainclaw/core";
 import { type ChainAdapter, createChainAdapter } from "./adapter.js";
 import { createSolanaAdapter } from "./solana-adapter.js";
-import { getChainInfo, getSupportedChainIds } from "./registry.js";
+import { getChainInfo } from "./registry.js";
 
 const logger = getLogger("chain-manager");
 

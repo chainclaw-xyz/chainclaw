@@ -79,7 +79,7 @@ export class SkillLoader {
       throw new Error(`No chainclaw-skill.json found in ${skillDir}`);
     }
     const rawManifest = JSON.parse(readFileSync(manifestPath, "utf-8")) as unknown;
-    const manifest: SkillManifest = skillManifestSchema.parse(rawManifest);
+    const _manifest: SkillManifest = skillManifestSchema.parse(rawManifest);
 
     // 2. Resolve entry point from package.json
     const pkgPath = join(skillDir, "package.json");

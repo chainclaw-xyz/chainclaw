@@ -17,8 +17,8 @@ export async function loadPlugins(ctx: PluginContext): Promise<PluginHandle[]> {
 
   for (const pkgName of KNOWN_PLUGINS) {
     try {
-      const mod = await import(pkgName);
-      const plugin: ServerPlugin = mod.default ?? mod.plugin;
+      const mod: Record<string, unknown> = await import(pkgName) as Record<string, unknown>;
+      const plugin: ServerPlugin = (mod.default ?? mod.plugin) as ServerPlugin;
 
       if (!plugin?.name || !plugin?.init) {
         logger.warn({ pkg: pkgName }, "Plugin module missing name or init, skipping");
@@ -41,7 +41,7 @@ export async function loadPlugins(ctx: PluginContext): Promise<PluginHandle[]> {
   return handles;
 }
 
-function isModuleNotFoundError(err: unknown, pkgName: string): boolean {
+function isModuleNotFoundError(err: unknown, _pkgName: string): boolean {
   if (err && typeof err === "object" && "code" in err) {
     const code = (err as { code: string }).code;
     if (code === "ERR_MODULE_NOT_FOUND" || code === "MODULE_NOT_FOUND") {

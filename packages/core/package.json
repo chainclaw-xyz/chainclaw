@@ -9,16 +9,19 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "lint": "eslint src/",
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@rollup/rollup-darwin-arm64": "^4.59.0",
     "dotenv": "^16.4.7",
     "pino": "^9.6.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {
     "@types/node": "^25.2.3",
+    "@vitest/coverage-v8": "^3.2.4",
     "typescript": "^5.7.3",
     "vitest": "^3.0.5"
   }

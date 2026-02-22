@@ -1,10 +1,8 @@
 import { z } from "zod";
-import { getLogger, type SkillResult } from "@chainclaw/core";
+import type { SkillResult } from "@chainclaw/core";
 import { ChainManager } from "@chainclaw/chains";
 import type { SkillDefinition, SkillExecutionContext } from "./types.js";
 import { getTokenPrice } from "./prices.js";
-
-const logger = getLogger("skill-portfolio");
 
 const portfolioParams = z.object({
   chainId: z.number().optional(),

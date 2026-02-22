@@ -6,7 +6,7 @@ const logger = getLogger("health");
 
 export interface HealthDeps {
   skillRegistry: SkillRegistry;
-  agentRuntime: unknown | undefined;
+  agentRuntime: unknown;
   channels: string[];
   startedAt: number;
 }
@@ -16,7 +16,7 @@ export interface HealthServer {
   close: () => void;
 }
 
-export function createHealthServer(port: number, deps: HealthDeps): HealthServer {
+export function createHealthServer(port: number, deps: HealthDeps, host: string = "127.0.0.1"): HealthServer {
   const httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
     res.setHeader("Content-Type", "application/json");
 
@@ -55,8 +55,8 @@ export function createHealthServer(port: number, deps: HealthDeps): HealthServer
     res.end(JSON.stringify({ error: "Not found" }));
   });
 
-  httpServer.listen(port, () => {
-    logger.info({ port }, "Health check server listening");
+  httpServer.listen(port, host, () => {
+    logger.info({ port, host }, "Health check server listening");
   });
 
   return {

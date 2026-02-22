@@ -1,9 +1,7 @@
 import { z } from "zod";
-import { getLogger, type SkillResult } from "@chainclaw/core";
+import type { SkillResult } from "@chainclaw/core";
 import type { AgentRunner, AgentDefinition, PerformanceTracker } from "@chainclaw/agent-sdk";
 import type { SkillDefinition, SkillExecutionContext } from "./types.js";
-
-const logger = getLogger("skill-agent");
 
 const agentParams = z.object({
   action: z.enum(["start", "stop", "pause", "resume", "status", "list", "trades", "reasoning"]),

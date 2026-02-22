@@ -273,7 +273,7 @@ async function getLiFiQuote(
       order: "RECOMMENDED",
     });
 
-    const response = await fetch(`https://li.quest/v1/quote?${params}`, {
+    const response = await fetch(`https://li.quest/v1/quote?${params.toString()}`, {
       headers: { Accept: "application/json" },
     });
 

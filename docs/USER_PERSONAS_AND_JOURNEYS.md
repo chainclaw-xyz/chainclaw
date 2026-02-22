@@ -714,17 +714,17 @@ marketplace (browse)                         memory
 | `@chainclaw/skills-sdk` | 18 | Dev | Strong |
 | `@chainclaw/agent` | 22 | Marcus, Priya (NL) | Good — intent parsing, memory, LLM provider |
 | `@chainclaw/agent-sdk` | 23 | Priya, Dev | Strong — backtest, performance, validation |
-| `@chainclaw/gateway` | 0 | All | **Critical gap** — zero tests for all 3 channels |
+| `@chainclaw/gateway` | 37 | All | Router (25), formatter (7), rate-limiter (5) |
 | `@chainclaw/marketplace` | 35 | Priya, Dev, Marcus | Strong |
 | `@chainclaw/data-pipeline` | 34 | Priya, Dev | Strong |
-| `@chainclaw/server` | 0 | All (operator) | No tests — server wiring + health check untested |
+| `@chainclaw/server` | 73 | All (operator) | Health endpoints (6), integration flows + persona journeys (67) |
 
 ---
 
 ### Critical Gaps by Priority
 
 **P0 — Impacts all personas (every user touches these):**
-1. **Gateway package (0 tests)** — Telegram command routing, Discord slash commands, WebChat WebSocket, confirmation dialogs, rate limiting, `/start` onboarding wizard, `/help` listing, `/wallet` command handler, NL fallback routing. This is the entire user-facing surface.
+1. **Gateway package (37 tests)** — Router (25), formatter (7), rate-limiter (5). Remaining gaps: Telegram/Discord/WebChat adapter integration, confirmation dialogs, `/start` onboarding wizard.
 2. **Individual skill execution (0 tests)** — balance, portfolio, swap, bridge, lend, DCA, alert, workflow, risk_check (as a skill), history (as a skill). The SkillRegistry is tested, but no skill's `execute()` function is tested.
 
 **P1 — Impacts specific personas heavily:**
@@ -733,5 +733,5 @@ marketplace (browse)                         memory
 5. **Chain adapters (0 tests)** — No tests for EVM adapter (`getBalance`, `getTokenBalances`, `getGasPrice`) or Solana adapter. Impacts every persona that checks balances.
 
 **P2 — Nice to have:**
-6. **Server health endpoints (0 tests)** — Impacts Priya (operator monitoring).
+6. **Server health endpoints (6 tests)** — Covered: /health, /ready, 404. Remaining gap: server boot wiring integration.
 7. **AgentRunner (0 tests)** — The evaluation loop, risk enforcement, and knowledge source fetching for live agents. Impacts Priya and Dev.

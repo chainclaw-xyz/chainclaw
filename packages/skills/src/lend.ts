@@ -4,7 +4,7 @@ import {
   http,
   encodeFunctionData,
   parseUnits,
-  formatUnits,
+
   maxUint256,
   erc20Abi,
   type Address,
@@ -325,7 +325,7 @@ async function handleSupply(
   }
 
   const result = await executor.execute(
-    { chainId, from: walletAddr, to: poolAddress, value: 0n, data: data as Hex, gasLimit: 300_000n },
+    { chainId, from: walletAddr, to: poolAddress, value: 0n, data: data, gasLimit: 300_000n },
     signer,
     { userId: context.userId, skillName: "lend", intentDescription: `Supply ${amountHuman} ${tokenSymbol} to Aave V3 on ${chainName}`, ethPriceUsd: ethPrice },
     buildCallbacks(context, `Supplied ${amountHuman} ${tokenSymbol} to Aave V3 on ${chainName}`),
@@ -363,7 +363,7 @@ async function handleWithdraw(
   });
 
   const result = await executor.execute(
-    { chainId, from: walletAddr, to: poolAddress, value: 0n, data: data as Hex, gasLimit: 300_000n },
+    { chainId, from: walletAddr, to: poolAddress, value: 0n, data: data, gasLimit: 300_000n },
     signer,
     { userId: context.userId, skillName: "lend", intentDescription: `Withdraw ${amountHuman} ${tokenSymbol} from Aave V3 on ${chainName}`, ethPriceUsd: ethPrice },
     buildCallbacks(context, `Withdrew ${amountHuman} ${tokenSymbol} from Aave V3 on ${chainName}`),
@@ -402,7 +402,7 @@ async function handleBorrow(
   });
 
   const result = await executor.execute(
-    { chainId, from: walletAddr, to: poolAddress, value: 0n, data: data as Hex, gasLimit: 350_000n },
+    { chainId, from: walletAddr, to: poolAddress, value: 0n, data: data, gasLimit: 350_000n },
     signer,
     { userId: context.userId, skillName: "lend", intentDescription: `Borrow ${amountHuman} ${tokenSymbol} (${rateLabel}) from Aave V3 on ${chainName}`, ethPriceUsd: ethPrice },
     buildCallbacks(context, `Borrowed ${amountHuman} ${tokenSymbol} (${rateLabel}) from Aave V3 on ${chainName}`),
@@ -450,7 +450,7 @@ async function handleRepay(
   });
 
   const result = await executor.execute(
-    { chainId, from: walletAddr, to: poolAddress, value: 0n, data: data as Hex, gasLimit: 300_000n },
+    { chainId, from: walletAddr, to: poolAddress, value: 0n, data: data, gasLimit: 300_000n },
     signer,
     { userId: context.userId, skillName: "lend", intentDescription: `Repay ${amountHuman} ${tokenSymbol} (${rateLabel}) on Aave V3 (${chainName})`, ethPriceUsd: ethPrice },
     buildCallbacks(context, `Repaid ${amountHuman} ${tokenSymbol} on Aave V3 (${chainName})`),
@@ -492,7 +492,7 @@ async function ensureApproval(
     });
 
     const result = await executor.execute(
-      { chainId, from: walletAddr, to: tokenAddress, value: 0n, data: approveData as Hex, gasLimit: 100_000n },
+      { chainId, from: walletAddr, to: tokenAddress, value: 0n, data: approveData, gasLimit: 100_000n },
       signer,
       { userId: context.userId, skillName: "lend", intentDescription: `Approve ${tokenSymbol} for Aave V3`, ethPriceUsd: ethPrice },
       {

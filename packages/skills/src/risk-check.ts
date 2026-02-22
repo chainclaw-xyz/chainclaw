@@ -41,7 +41,7 @@ export function createRiskCheckSkill(riskEngine: RiskEngine): SkillDefinition {
       const formatted = riskEngine.formatRiskReport(report);
 
       // Add action suggestions based on risk level
-      let suggestion = "";
+      let suggestion;
       if (report.riskLevel === "critical" || report.isHoneypot) {
         suggestion =
           "\n\n*Recommendation:* DO NOT interact with this token. It has critical risk indicators.";

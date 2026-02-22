@@ -214,7 +214,7 @@ async function main(): Promise<void> {
     agentRuntime,
     channels,
     startedAt: Date.now(),
-  });
+  }, "0.0.0.0");
 
   // ─── Graceful shutdown ────────────────────────────────────
   const shutdown = async () => {
@@ -224,8 +224,8 @@ async function main(): Promise<void> {
     dcaScheduler.stop();
     for (const h of pluginHandles) h.stop();
 
-    if (telegramBot) telegramBot.stop();
-    if (discordClient) discordClient.destroy();
+    if (telegramBot) void telegramBot.stop();
+    if (discordClient) void discordClient.destroy();
     if (webChatServer) {
       webChatServer.wss.close();
       webChatServer.httpServer.close();
@@ -236,7 +236,9 @@ async function main(): Promise<void> {
     process.exit(0);
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-misused-promises
   process.on("SIGINT", shutdown);
+  // eslint-disable-next-line @typescript-eslint/no-misused-promises
   process.on("SIGTERM", shutdown);
 
   // ─── Start Telegram (polling — blocks) ────────────────────

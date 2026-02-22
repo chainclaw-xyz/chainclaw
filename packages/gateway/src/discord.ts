@@ -192,6 +192,7 @@ export async function createDiscordBot(
   }
 
   // ─── Slash command handler ────────────────────────────────
+  // eslint-disable-next-line @typescript-eslint/no-misused-promises
   client.on("interactionCreate", async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
@@ -257,6 +258,7 @@ export async function createDiscordBot(
   });
 
   // ─── DM / @mention natural language handler ───────────────
+  // eslint-disable-next-line @typescript-eslint/no-misused-promises
   client.on("messageCreate", async (message) => {
     // Ignore bots
     if (message.author.bot) return;

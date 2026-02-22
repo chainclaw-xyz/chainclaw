@@ -74,7 +74,7 @@ describe("SandboxedExecutor", () => {
     await wrapped.execute({}, ctx);
 
     expect(sendReply).toHaveBeenCalledWith(expect.stringContaining("...(truncated)"));
-    const calledWith = sendReply.mock.calls[0]![0] as string;
+    const calledWith = sendReply.mock.calls[0][0] as string;
     expect(calledWith.length).toBeLessThan(60); // 20 chars + truncation notice
   });
 

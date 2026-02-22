@@ -214,7 +214,7 @@ export class DcaScheduler {
     }
 
     const amountWei = parseUnits(job.amount, fromInfo.decimals);
-    const isFromNative = fromUpper === "ETH";
+    const _isFromNative = fromUpper === "ETH";
 
     // Build 1inch swap params
     const params = new URLSearchParams({
@@ -233,7 +233,7 @@ export class DcaScheduler {
     }
 
     const response = await fetch(
-      `https://api.1inch.dev/swap/v6.0/${chainId}/${endpoint}?${params}`,
+      `https://api.1inch.dev/swap/v6.0/${chainId}/${endpoint}?${params.toString()}`,
       { headers },
     );
 

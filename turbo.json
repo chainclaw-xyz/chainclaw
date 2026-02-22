@@ -12,7 +12,12 @@
     "test": {
       "dependsOn": ["build"]
     },
-    "lint": {},
+    "test:coverage": {
+      "dependsOn": ["build"]
+    },
+    "lint": {
+      "dependsOn": ["^build"]
+    },
     "clean": {
       "cache": false
     }

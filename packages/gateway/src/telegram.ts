@@ -147,6 +147,7 @@ export function createTelegramBot(token: string, deps: GatewayDeps): Bot {
     await ctx.replyWithChatAction("typing");
 
     // Keep sending typing indicator for long operations
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
     const typingInterval = setInterval(async () => {
       try {
         await ctx.replyWithChatAction("typing");

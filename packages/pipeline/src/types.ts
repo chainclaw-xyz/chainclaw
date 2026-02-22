@@ -1,4 +1,4 @@
-import type { Address, Hash, Hex } from "viem";
+import type { Address, Hex } from "viem";
 
 export type TxStatus = "pending" | "simulated" | "approved" | "signed" | "broadcast" | "confirmed" | "failed" | "rejected";
 

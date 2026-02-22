@@ -54,7 +54,7 @@ export function createOpenAIProvider(
           if (tc.type === "function") {
             toolCalls.push({
               name: tc.function.name,
-              arguments: JSON.parse(tc.function.arguments),
+              arguments: JSON.parse(tc.function.arguments) as Record<string, unknown>,
             });
           }
         }

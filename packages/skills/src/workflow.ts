@@ -141,7 +141,7 @@ function summarizeParams(params: Record<string, unknown>): string {
   const parts: string[] = [];
   for (const [key, value] of Object.entries(params)) {
     if (value != null && value !== "") {
-      parts.push(`${key}=${String(value)}`);
+      parts.push(`${key}=${JSON.stringify(value)}`);
     }
   }
   return parts.length > 0 ? `(${parts.join(", ")})` : "";
