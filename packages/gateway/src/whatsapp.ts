@@ -66,7 +66,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
     this.sock = sock;
 
     // Save credentials on update
-    sock.ev.on("creds.update", saveCreds);
+    sock.ev.on("creds.update", () => { void saveCreds(); });
 
     // Connection state changes
     sock.ev.on("connection.update", (update: Partial<ConnectionState>) => {
@@ -104,7 +104,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
       const reason = (lastDisconnect?.error as Boom)?.message ?? "unknown";
       this.status.lastError = reason;
 
-      if (statusCode === DisconnectReason.loggedOut) {
+      if (statusCode === Number(DisconnectReason.loggedOut)) {
         logger.warn("WhatsApp logged out — session invalidated. Delete auth dir and restart to re-pair.");
         this.shouldReconnect = false;
         return;

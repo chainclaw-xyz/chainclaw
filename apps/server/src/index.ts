@@ -1,4 +1,15 @@
-import { loadConfig, createLogger, getLogger } from "@chainclaw/core";
+import {
+  loadConfig,
+  createLogger,
+  getLogger,
+  triggerHook,
+  createHookEvent,
+  installUnhandledRejectionHandler,
+  acquireProcessLock,
+  waitForDrain,
+  DiagnosticCollector,
+  type ProcessLockHandle,
+} from "@chainclaw/core";
 import { ChainManager } from "@chainclaw/chains";
 import { WalletManager } from "@chainclaw/wallet";
 import {
@@ -38,6 +49,7 @@ import {
   WhatsAppAdapter,
   ChannelHealthMonitor,
   SecurityGuard,
+  DeliveryQueue,
   type GatewayDeps,
 } from "@chainclaw/gateway";
 import { CronService } from "@chainclaw/cron";
@@ -54,6 +66,20 @@ async function main(): Promise<void> {
 
   logger.info("Starting ChainClaw...");
 
+  // ─── Process safety ────────────────────────────────────────
+  installUnhandledRejectionHandler();
+
+  let processLock: ProcessLockHandle | undefined;
+  try {
+    processLock = acquireProcessLock(config.dataDir, { label: "chainclaw-server" });
+  } catch (err) {
+    logger.error({ err }, "Could not acquire process lock — another instance may be running");
+    process.exit(1);
+  }
+
+  // ─── Diagnostics ───────────────────────────────────────────
+  const diagnosticCollector = new DiagnosticCollector();
+
   // Ensure at least one channel is configured
   if (!config.telegramBotToken && !config.discordBotToken && !config.webChatEnabled && !config.slackBotToken && !config.whatsappEnabled) {
     throw new Error(
@@ -65,6 +91,7 @@ async function main(): Promise<void> {
   const chainManager = new ChainManager(config);
   const walletManager = new WalletManager(config.walletDir, config.walletPassword);
   const db = getDatabase(config.dataDir);
+  const deliveryQueue = new DeliveryQueue(db);
 
   // ─── Initialize pipeline ─────────────────────────────────
   const rpcOverrides: Record<number, string> = {
@@ -249,6 +276,14 @@ async function main(): Promise<void> {
   const healthMonitor = new ChannelHealthMonitor(channelRegistry);
   healthMonitor.start();
 
+  // ─── Recover pending deliveries ──────────────────────────
+  deliveryQueue.recoverPending(async (payload) => {
+    logger.info({ channel: payload.channel, recipientId: payload.recipientId }, "Recovering delivery");
+    // Best-effort recovery — actual channel delivery would go here
+  }).catch((err) => {
+    logger.warn({ err }, "Delivery queue recovery failed");
+  });
+
   // ─── Health check server ────────────────────────────────
   const healthServer = createHealthServer(config.healthCheckPort, {
     skillRegistry,
@@ -256,29 +291,67 @@ async function main(): Promise<void> {
     channels: startedChannels,
     startedAt: Date.now(),
     healthMonitor,
+    diagnosticCollector,
   }, "0.0.0.0");
 
   // ─── Graceful shutdown ────────────────────────────────────
-  const shutdown = async () => {
-    logger.info("Shutting down...");
+  let isShuttingDown = false;
+  const SHUTDOWN_TIMEOUT_MS = 30_000;
+
+  const shutdown = async (signal: string) => {
+    if (isShuttingDown) {
+      logger.warn("Shutdown already in progress, ignoring duplicate signal");
+      return;
+    }
+    isShuttingDown = true;
+
+    logger.info({ signal }, "Shutting down...");
+    const shutdownStart = Date.now();
+
+    // Force exit after timeout
+    const forceTimer = setTimeout(() => {
+      logger.error("Shutdown timed out — forcing exit");
+      process.exit(1);
+    }, SHUTDOWN_TIMEOUT_MS);
+    forceTimer.unref();
+
+    // Emit lifecycle hook
+    void triggerHook(createHookEvent("lifecycle", "shutdown", { signal }));
+
+    // 1. Wait for active command queue tasks to drain
+    const { drained } = await waitForDrain(10_000);
+    if (!drained) {
+      logger.warn("Command queue did not drain within 10s — proceeding with shutdown");
+    }
+
+    // 2. Stop background services
     agentRunner.stopAll();
     cronService.stop();
     alertEngine.stop();
     dcaScheduler.stop();
     for (const h of pluginHandles) h.stop();
 
+    // 3. Stop channels
     await channelRegistry.stopAll();
 
+    // 4. Stop monitoring + health
     healthMonitor.stop();
     healthServer.close();
+
+    // 5. Release process lock + close DB
+    processLock?.release();
     closeDatabase();
+
+    const elapsed = Date.now() - shutdownStart;
+    logger.info({ elapsedMs: elapsed }, "Shutdown complete");
+    clearTimeout(forceTimer);
     process.exit(0);
   };
 
   // eslint-disable-next-line @typescript-eslint/no-misused-promises
-  process.on("SIGINT", shutdown);
+  process.on("SIGINT", () => shutdown("SIGINT"));
   // eslint-disable-next-line @typescript-eslint/no-misused-promises
-  process.on("SIGTERM", shutdown);
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
 
   // ─── Log startup ──────────────────────────────────────────
   logger.info({ channels: startedChannels, nlEnabled: !!agentRuntime }, "ChainClaw is running!");
