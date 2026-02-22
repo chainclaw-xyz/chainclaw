@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { getLogger } from "@chainclaw/core";
+import { getLogger, type DiagnosticCollector } from "@chainclaw/core";
 import type { SkillRegistry } from "@chainclaw/skills";
 import type { ChannelHealthMonitor } from "@chainclaw/gateway";
 
@@ -11,6 +11,7 @@ export interface HealthDeps {
   channels: string[];
   startedAt: number;
   healthMonitor?: ChannelHealthMonitor;
+  diagnosticCollector?: DiagnosticCollector;
 }
 
 export interface HealthServer {
@@ -43,6 +44,7 @@ export function createHealthServer(port: number, deps: HealthDeps, host: string 
           channels: deps.channels,
           channelHealth,
           agent: deps.agentRuntime ? "active" : "disabled",
+          diagnostics: deps.diagnosticCollector?.getSnapshot(),
           timestamp: new Date().toISOString(),
         }),
       );

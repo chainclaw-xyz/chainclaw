@@ -322,7 +322,7 @@ export class DiscordAdapter implements ChannelAdapter {
 
   async stop(): Promise<void> {
     if (this.client) {
-      this.client.destroy();
+      void this.client.destroy();
       this.client = null;
       this.status.connected = false;
     }
