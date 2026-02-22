@@ -11,7 +11,6 @@ vi.mock("../prices.js", () => ({
 }));
 
 const mockFetch = vi.fn();
-vi.stubGlobal("fetch", mockFetch);
 
 function mockContext(overrides?: Partial<SkillExecutionContext>): SkillExecutionContext {
   return {
@@ -59,6 +58,7 @@ describe("createBridgeSkill", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal("fetch", mockFetch);
   });
 
   it("returns bridge quote with fee and estimated time", async () => {

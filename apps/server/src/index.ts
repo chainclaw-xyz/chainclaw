@@ -19,7 +19,7 @@ import {
   createAgentSkill,
   getTokenPrice,
 } from "@chainclaw/skills";
-import { createLLMProvider, getDatabase, AgentRuntime, closeDatabase } from "@chainclaw/agent";
+import { createLLMProvider, getDatabase, AgentRuntime, closeDatabase, createEmbeddingProvider } from "@chainclaw/agent";
 import { TransactionExecutor } from "@chainclaw/pipeline";
 import {
   HistoricalDataProvider,
@@ -30,11 +30,17 @@ import {
   type AgentDefinition,
 } from "@chainclaw/agent-sdk";
 import {
-  createTelegramBot,
-  createDiscordBot,
-  createWebChat,
+  ChannelRegistry,
+  TelegramAdapter,
+  DiscordAdapter,
+  WebAdapter,
+  SlackAdapter,
+  WhatsAppAdapter,
+  ChannelHealthMonitor,
+  SecurityGuard,
   type GatewayDeps,
 } from "@chainclaw/gateway";
+import { CronService } from "@chainclaw/cron";
 import { SkillLoader } from "@chainclaw/skills-sdk";
 import { loadPlugins } from "./plugin-loader.js";
 import type { PluginHandle } from "./plugin.js";
@@ -49,9 +55,9 @@ async function main(): Promise<void> {
   logger.info("Starting ChainClaw...");
 
   // Ensure at least one channel is configured
-  if (!config.telegramBotToken && !config.discordBotToken && !config.webChatEnabled) {
+  if (!config.telegramBotToken && !config.discordBotToken && !config.webChatEnabled && !config.slackBotToken && !config.whatsappEnabled) {
     throw new Error(
-      "No channels configured. Set at least one of: TELEGRAM_BOT_TOKEN, DISCORD_BOT_TOKEN, WEB_CHAT_ENABLED=true",
+      "No channels configured. Set at least one of: TELEGRAM_BOT_TOKEN, DISCORD_BOT_TOKEN, WEB_CHAT_ENABLED=true, SLACK_BOT_TOKEN, WHATSAPP_ENABLED=true",
     );
   }
 
@@ -129,8 +135,12 @@ async function main(): Promise<void> {
 
   try {
     const llm = createLLMProvider(config);
-    agentRuntime = new AgentRuntime(llm, db, skillRegistry);
-    logger.info({ provider: config.llmProvider }, "Agent runtime initialized");
+    const embeddingProvider = createEmbeddingProvider({
+      openaiApiKey: config.embeddingApiKey,
+      embeddingModel: config.embeddingModel,
+    });
+    agentRuntime = new AgentRuntime(llm, db, skillRegistry, embeddingProvider);
+    logger.info({ provider: config.llmProvider, semanticMemory: !!embeddingProvider }, "Agent runtime initialized");
   } catch (err) {
     logger.warn(
       { err },
@@ -157,80 +167,109 @@ async function main(): Promise<void> {
 
   logger.info({ skills: skillRegistry.list().map((s) => s.name) }, "Skills registered");
 
+  // ─── Security guard ─────────────────────────────────────
+  const securityGuard = new SecurityGuard({
+    mode: config.securityMode,
+    allowlist: config.securityAllowlist,
+  });
+
+  if (config.securityMode === "allowlist") {
+    logger.info(
+      { entries: config.securityAllowlist.length },
+      "Security: allowlist mode enabled",
+    );
+  }
+
   // ─── Shared gateway deps ──────────────────────────────────
   const gatewayDeps: GatewayDeps = {
     walletManager,
     chainManager,
     skillRegistry,
     agentRuntime,
+    securityGuard,
   };
+
+  // ─── Cron scheduler ─────────────────────────────────────
+  const cronService = new CronService(db, async (job) => {
+    const skill = skillRegistry.get(job.skillName);
+    if (!skill) {
+      return { ok: false, error: `Skill not found: ${job.skillName}` };
+    }
+    try {
+      const defaultAddr = walletManager.getDefaultAddress();
+      await skill.execute(job.skillParams, {
+        userId: job.userId,
+        walletAddress: defaultAddr ?? null,
+        chainIds: job.chainId ? [job.chainId] : chainManager.getSupportedChains(),
+        sendReply: async () => { /* cron jobs don't have a reply channel */ },
+      });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
+    }
+  });
+  cronService.start();
 
   // Start background services
   dcaScheduler.start();
 
-  // ─── Start channels ───────────────────────────────────────
-  const channels: string[] = [];
-  let telegramBot: ReturnType<typeof createTelegramBot> | undefined;
-  let discordClient: Awaited<ReturnType<typeof createDiscordBot>> | undefined;
-  let webChatServer: ReturnType<typeof createWebChat> | undefined;
+  // ─── Register and start channels ──────────────────────────
+  const channelRegistry = new ChannelRegistry();
 
-  // Telegram
   if (config.telegramBotToken) {
-    telegramBot = createTelegramBot(config.telegramBotToken, gatewayDeps);
-
-    // Wire alert notifications to Telegram
+    const telegram = new TelegramAdapter(config.telegramBotToken);
+    // Wire alert notifications directly via the Telegram Bot API
     alertEngine.setNotifier(async (userId, message) => {
-      await telegramBot!.api.sendMessage(Number(userId), message, { parse_mode: "Markdown" });
+      await telegram.notify(userId, message);
     });
-
-    channels.push("telegram");
+    channelRegistry.register(telegram);
   }
 
-  // Discord
   if (config.discordBotToken && config.discordClientId) {
-    try {
-      discordClient = await createDiscordBot(
-        config.discordBotToken,
-        config.discordClientId,
-        gatewayDeps,
-      );
-      channels.push("discord");
-    } catch (err) {
-      logger.error({ err }, "Failed to start Discord bot");
-    }
+    channelRegistry.register(new DiscordAdapter(config.discordBotToken, config.discordClientId));
   }
 
-  // Web Chat
-  if (config.webChatEnabled) {
-    webChatServer = createWebChat(gatewayDeps, { port: config.webChatPort });
-    channels.push(`web (port ${config.webChatPort})`);
+  if (config.slackBotToken && config.slackAppToken) {
+    channelRegistry.register(new SlackAdapter(config.slackBotToken, config.slackAppToken));
   }
+
+  if (config.whatsappEnabled) {
+    channelRegistry.register(new WhatsAppAdapter(config.whatsappAuthDir));
+  }
+
+  if (config.webChatEnabled) {
+    channelRegistry.register(new WebAdapter({ port: config.webChatPort }));
+  }
+
+  const startedChannels = await channelRegistry.startAll(gatewayDeps);
 
   alertEngine.start();
+
+  // ─── Channel health monitoring ─────────────────────────
+  const healthMonitor = new ChannelHealthMonitor(channelRegistry);
+  healthMonitor.start();
 
   // ─── Health check server ────────────────────────────────
   const healthServer = createHealthServer(config.healthCheckPort, {
     skillRegistry,
     agentRuntime,
-    channels,
+    channels: startedChannels,
     startedAt: Date.now(),
+    healthMonitor,
   }, "0.0.0.0");
 
   // ─── Graceful shutdown ────────────────────────────────────
   const shutdown = async () => {
     logger.info("Shutting down...");
     agentRunner.stopAll();
+    cronService.stop();
     alertEngine.stop();
     dcaScheduler.stop();
     for (const h of pluginHandles) h.stop();
 
-    if (telegramBot) void telegramBot.stop();
-    if (discordClient) void discordClient.destroy();
-    if (webChatServer) {
-      webChatServer.wss.close();
-      webChatServer.httpServer.close();
-    }
+    await channelRegistry.stopAll();
 
+    healthMonitor.stop();
     healthServer.close();
     closeDatabase();
     process.exit(0);
@@ -241,30 +280,12 @@ async function main(): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-misused-promises
   process.on("SIGTERM", shutdown);
 
-  // ─── Start Telegram (polling — blocks) ────────────────────
-  if (telegramBot) {
-    logger.info("Starting Telegram bot (polling mode)...");
-    await telegramBot.start({
-      onStart: (botInfo) => {
-        logger.info(
-          { username: botInfo.username, nlEnabled: !!agentRuntime, channels },
-          "ChainClaw is running!",
-        );
-        console.log(`\n  ChainClaw is running!`);
-        console.log(`  Channels: ${channels.join(", ")}`);
-        console.log(`  Telegram: @${botInfo.username}`);
-        console.log(`  NL mode: ${agentRuntime ? "enabled" : "disabled (set LLM_PROVIDER)"}`);
-        console.log(`  Skills: ${skillRegistry.list().map((s) => s.name).join(", ")}\n`);
-      },
-    });
-  } else {
-    // No Telegram — just log and keep the process alive
-    logger.info({ channels, nlEnabled: !!agentRuntime }, "ChainClaw is running!");
-    console.log(`\n  ChainClaw is running!`);
-    console.log(`  Channels: ${channels.join(", ")}`);
-    console.log(`  NL mode: ${agentRuntime ? "enabled" : "disabled (set LLM_PROVIDER)"}`);
-    console.log(`  Skills: ${skillRegistry.list().map((s) => s.name).join(", ")}\n`);
-  }
+  // ─── Log startup ──────────────────────────────────────────
+  logger.info({ channels: startedChannels, nlEnabled: !!agentRuntime }, "ChainClaw is running!");
+  console.log(`\n  ChainClaw is running!`);
+  console.log(`  Channels: ${startedChannels.join(", ")}`);
+  console.log(`  NL mode: ${agentRuntime ? "enabled" : "disabled (set LLM_PROVIDER)"}`);
+  console.log(`  Skills: ${skillRegistry.list().map((s) => s.name).join(", ")}\n`);
 }
 
 main().catch((err) => {

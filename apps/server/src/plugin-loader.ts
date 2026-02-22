@@ -3,7 +3,7 @@
  * Attempts to import known plugin packages at startup.
  * Missing packages are silently skipped (optional dependencies).
  */
-import { getLogger } from "@chainclaw/core";
+import { getLogger, registerHook } from "@chainclaw/core";
 import type { ServerPlugin, PluginContext, PluginHandle } from "./plugin.js";
 
 const logger = getLogger("plugin-loader");
@@ -28,6 +28,15 @@ export async function loadPlugins(ctx: PluginContext): Promise<PluginHandle[]> {
       logger.info({ plugin: plugin.name }, "Loading plugin");
       const handle = await plugin.init(ctx);
       handles.push(handle);
+
+      // Register plugin hooks
+      if (handle.hooks) {
+        for (const { eventKey, handler } of handle.hooks) {
+          registerHook(eventKey, handler);
+          logger.debug({ plugin: plugin.name, eventKey }, "Plugin hook registered");
+        }
+      }
+
       logger.info({ plugin: plugin.name }, "Plugin loaded");
     } catch (err: unknown) {
       if (isModuleNotFoundError(err, pkgName)) {

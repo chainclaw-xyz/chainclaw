@@ -4,7 +4,7 @@
  * Persona: 31-year-old quant at a crypto fund, professional DeFi experience
  * Journey: portfolio → agent start+status → history JSON → reasoning
  */
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from "vitest";
 import { createMockAdapterControls } from "../mocks/mock-chain-adapter.js";
 import { ETH_BALANCE_2ETH, USDC_BALANCE_5K, STANDARD_PRICES } from "../mocks/canned-responses.js";
 
@@ -49,6 +49,10 @@ describe("Priya's portfolio management journey", () => {
     vi.stubGlobal("fetch", harness.fetchRouter.handler);
 
     harness.walletManager.generateWalletFromMnemonic("priya-fund");
+  });
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", harness.fetchRouter.handler);
   });
 
   afterAll(() => {

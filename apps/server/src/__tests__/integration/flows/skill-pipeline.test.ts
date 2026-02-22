@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from "vitest";
 import { createMockAdapterControls } from "../mocks/mock-chain-adapter.js";
 import { ETH_BALANCE_1ETH, USDC_BALANCE_5K, BASE_ETH_BALANCE, STANDARD_PRICES } from "../mocks/canned-responses.js";
 
@@ -57,6 +57,10 @@ describe("Skill execution through real SkillRegistry", () => {
 
     // Create a wallet so skills requiring one work
     harness.walletManager.generateWalletFromMnemonic("integration-wallet");
+  });
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", harness.fetchRouter.handler);
   });
 
   afterAll(() => {

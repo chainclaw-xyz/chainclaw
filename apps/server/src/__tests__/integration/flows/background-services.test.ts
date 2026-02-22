@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from "vitest";
 import { createMockAdapterControls } from "../mocks/mock-chain-adapter.js";
 import { STANDARD_PRICES } from "../mocks/canned-responses.js";
 
@@ -50,6 +50,10 @@ describe("Background services integration", () => {
 
     // Create a wallet
     harness.walletManager.generateWalletFromMnemonic("bg-wallet");
+  });
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", harness.fetchRouter.handler);
   });
 
   afterAll(() => {

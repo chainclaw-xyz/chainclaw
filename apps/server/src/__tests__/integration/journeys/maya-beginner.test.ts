@@ -4,7 +4,7 @@
  * Persona: 28-year-old marketing professional, crypto-curious, DeFi newcomer
  * Journey: /start → wallet create → /balance → risk_check → alert → portfolio
  */
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from "vitest";
 import { createMockAdapterControls } from "../mocks/mock-chain-adapter.js";
 import { ETH_BALANCE_1ETH, USDC_BALANCE_5K, BASE_ETH_BALANCE, ARB_ETH_BALANCE, OP_ETH_BALANCE, STANDARD_PRICES } from "../mocks/canned-responses.js";
 
@@ -50,6 +50,10 @@ describe("Maya's beginner journey", () => {
     harness = createTestHarness({ adapterControls, withAgentRuntime: true });
     harness.fetchRouter.onCoinGecko(STANDARD_PRICES);
     harness.fetchRouter.onGoPlus();
+    vi.stubGlobal("fetch", harness.fetchRouter.handler);
+  });
+
+  beforeEach(() => {
     vi.stubGlobal("fetch", harness.fetchRouter.handler);
   });
 
