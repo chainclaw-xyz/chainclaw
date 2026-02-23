@@ -28,6 +28,14 @@ import {
   createHistorySkill,
   createBacktestSkill,
   createAgentSkill,
+  createYieldFinderSkill,
+  LimitOrderManager,
+  createLimitOrderSkill,
+  WhaleWatchEngine,
+  createWhaleWatchSkill,
+  SnipeManager,
+  createSnipeSkill,
+  createAirdropTrackerSkill,
   getTokenPrice,
 } from "@chainclaw/skills";
 import { createLLMProvider, getDatabase, AgentRuntime, closeDatabase, createEmbeddingProvider } from "@chainclaw/agent";
@@ -131,6 +139,16 @@ async function main(): Promise<void> {
   skillRegistry.register(createPortfolioSkill(chainManager));
   skillRegistry.register(createRiskCheckSkill(executor.getRiskEngine()));
   skillRegistry.register(createHistorySkill(executor.getTransactionLog()));
+
+  // ─── Tier 1 skills ──────────────────────────────────────────
+  skillRegistry.register(createYieldFinderSkill());
+  const limitOrderManager = new LimitOrderManager(db);
+  skillRegistry.register(createLimitOrderSkill(limitOrderManager, walletManager));
+  const whaleWatchEngine = new WhaleWatchEngine(db, rpcOverrides);
+  skillRegistry.register(createWhaleWatchSkill(whaleWatchEngine));
+  const snipeManager = new SnipeManager(db);
+  skillRegistry.register(createSnipeSkill(snipeManager, executor.getRiskEngine()));
+  skillRegistry.register(createAirdropTrackerSkill(chainManager, rpcOverrides));
 
   // ─── Agent SDK (backtest + live agents) ─────────────────────
   const historicalData = new HistoricalDataProvider(db);
@@ -239,6 +257,7 @@ async function main(): Promise<void> {
 
   // Start background services
   dcaScheduler.start();
+  whaleWatchEngine.start();
 
   // ─── Register and start channels ──────────────────────────
   const channelRegistry = new ChannelRegistry();
@@ -344,6 +363,7 @@ async function main(): Promise<void> {
     cronService.stop();
     alertEngine.stop();
     dcaScheduler.stop();
+    whaleWatchEngine.stop();
     for (const h of pluginHandles) h.stop();
 
     // 3. Stop channels

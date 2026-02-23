@@ -11,6 +11,11 @@ export type IntentAction =
   | "backtest"
   | "agent"
   | "marketplace"
+  | "yield_finder"
+  | "limit_order"
+  | "whale_watch"
+  | "snipe"
+  | "airdrop_tracker"
   | "help"
   | "settings"
   | "unknown";
