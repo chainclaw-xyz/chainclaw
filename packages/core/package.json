@@ -14,7 +14,6 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@rollup/rollup-darwin-arm64": "^4.59.0",
     "dotenv": "^16.4.7",
     "pino": "^9.6.0",
     "zod": "^3.24.2"

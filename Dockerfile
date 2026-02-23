@@ -21,7 +21,7 @@ FROM deps AS builder
 COPY tsconfig.base.json ./
 COPY packages/ packages/
 COPY apps/ apps/
-RUN npx turbo build
+RUN ./node_modules/.bin/turbo build --filter='!@chainclaw/docs'
 
 # Production
 FROM base AS runner

@@ -20,6 +20,21 @@
     "type": "git",
     "url": "git+https://github.com/chainclaw-xyz/chainclaw.git"
   },
+  "homepage": "https://github.com/chainclaw-xyz/chainclaw#readme",
+  "bugs": {
+    "url": "https://github.com/chainclaw-xyz/chainclaw/issues"
+  },
+  "keywords": [
+    "crypto",
+    "defi",
+    "ai-agent",
+    "blockchain",
+    "telegram-bot",
+    "self-hosted",
+    "trading",
+    "wallet"
+  ],
+  "author": "ChainClaw <team@chainclaw.xyz>",
   "packageManager": "npm@11.6.0",
   "license": "MIT",
   "engines": {
