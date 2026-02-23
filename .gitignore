@@ -14,6 +14,7 @@ data/
 
 # Concept docs
 ChainClaw_Concept_Document*
+PLAN.md
 
 # OS
 .DS_Store
