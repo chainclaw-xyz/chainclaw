@@ -68,25 +68,25 @@ When the user provides information across multiple messages, combine ALL context
 
 **workflow**: { steps: Array<{ skill: string, params: object }> }
 
-**yield_finder**: { token?: string, chainId?: number, minTvl?: number, limit?: number, sortBy?: "apy"|"tvl" }
-  - Use action "yield_finder" (with underscore)
+**yield-finder**: { token?: string, chainId?: number, minTvl?: number, limit?: number, sortBy?: "apy"|"tvl" }
+  - Use action "yield-finder"
   - "Find yields for USDC" → token: "USDC"
   - "Best yields on Base" → chainId: 8453
 
-**limit_order**: { action?: "create"|"list"|"cancel", fromToken?: string, toToken?: string, amount?: string, limitPrice?: number, chainId?: number, orderId?: string }
-  - Use action "limit_order" (with underscore)
+**limit-order**: { action?: "create"|"list"|"cancel", fromToken?: string, toToken?: string, amount?: string, limitPrice?: number, chainId?: number, orderId?: string }
+  - Use action "limit-order"
   - "Set a limit order to buy ETH at $2000 with 500 USDC" → action: "create", fromToken: "USDC", toToken: "ETH", amount: "500", limitPrice: 2000
 
-**whale_watch**: { action: "watch"|"list"|"remove", address?: string, label?: string, minValueUsd?: number, chainId?: number, watchId?: number }
-  - Use action "whale_watch" (with underscore)
+**whale-watch**: { action: "watch"|"list"|"remove", address?: string, label?: string, minValueUsd?: number, chainId?: number, watchId?: number }
+  - Use action "whale-watch"
   - "Watch vitalik's wallet" → action: "watch", address: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", label: "vitalik"
 
 **snipe**: { action?: "snipe"|"list"|"cancel", token?: string, amount?: string, maxSlippage?: number, chainId?: number, safetyChecks?: boolean, snipeId?: number }
   - Use action "snipe"
   - "Snipe 0xAbC... on Base with 0.1 ETH" → token: "0xAbC...", amount: "0.1", chainId: 8453
 
-**airdrop_tracker**: { address?: string, chainId?: number, protocol?: string }
-  - Use action "airdrop_tracker" (with underscore)
+**airdrop-tracker**: { address?: string, chainId?: number, protocol?: string }
+  - Use action "airdrop-tracker"
   - "Check my airdrop eligibility" → params: {}
   - "Check airdrop for LayerZero" → protocol: "LayerZero"
 
@@ -116,31 +116,31 @@ User: "Bridge 5 ETH to Arbitrum then swap half to USDC"
 → Two intents: bridge then swap
 
 User: "Find best yields for USDC"
-→ action: "yield_finder", params: { token: "USDC" }
+→ action: "yield-finder", params: { token: "USDC" }
 
 User: "Top yields on Base sorted by TVL"
-→ action: "yield_finder", params: { chainId: 8453, sortBy: "tvl" }
+→ action: "yield-finder", params: { chainId: 8453, sortBy: "tvl" }
 
 User: "Set a limit order to buy 1 ETH at $2000 with USDC"
-→ action: "limit_order", params: { action: "create", fromToken: "USDC", toToken: "ETH", amount: "2000", limitPrice: 2000 }
+→ action: "limit-order", params: { action: "create", fromToken: "USDC", toToken: "ETH", amount: "2000", limitPrice: 2000 }
 
 User: "Show my limit orders"
-→ action: "limit_order", params: { action: "list" }
+→ action: "limit-order", params: { action: "list" }
 
 User: "Watch this wallet: 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
-→ action: "whale_watch", params: { action: "watch", address: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045" }
+→ action: "whale-watch", params: { action: "watch", address: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045" }
 
 User: "Track vitalik for moves over $100k"
-→ action: "whale_watch", params: { action: "watch", address: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", label: "vitalik", minValueUsd: 100000 }
+→ action: "whale-watch", params: { action: "watch", address: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", label: "vitalik", minValueUsd: 100000 }
 
 User: "Snipe 0xAbC123... on Base with 0.1 ETH"
 → action: "snipe", params: { token: "0xAbC123...", amount: "0.1", chainId: 8453 }
 
 User: "Check my airdrop eligibility"
-→ action: "airdrop_tracker", params: {}
+→ action: "airdrop-tracker", params: {}
 
 User: "Am I eligible for LayerZero airdrop?"
-→ action: "airdrop_tracker", params: { protocol: "LayerZero" }
+→ action: "airdrop-tracker", params: { protocol: "LayerZero" }
 
 User: "Hello!"
 → action: "unknown", conversationalReply: "Hey! I'm ChainClaw, your DeFi assistant. How can I help you today?"`;
@@ -164,7 +164,7 @@ export const PARSE_INTENT_TOOL = {
                 "balance", "swap", "bridge", "lend", "borrow",
                 "alert", "risk_check", "dca", "portfolio", "history",
                 "backtest", "agent", "marketplace", "workflow",
-                "yield_finder", "limit_order", "whale_watch", "snipe", "airdrop_tracker",
+                "yield-finder", "limit-order", "whale-watch", "snipe", "airdrop-tracker",
                 "help", "settings", "unknown",
               ],
               description: "The action type",

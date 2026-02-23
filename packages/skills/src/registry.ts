@@ -14,7 +14,7 @@ const LANE_MAP: Record<string, string> = {
   history: "query",
   "risk-check": "query",
   "yield-finder": "query",
-  "whale-watch": "query",
+  "whale-watch": "background",
   "airdrop-tracker": "query",
   "limit-order": "tx",
   snipe: "tx",

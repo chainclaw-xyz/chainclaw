@@ -297,14 +297,26 @@ async function handleSnipe(
     lines.push("_Safety checks disabled by user._\n");
   }
 
-  // Step 3: Token passed all safety checks
+  // Step 3: Token passed safety checks — request user confirmation before proceeding
+  lines.push(`*Safety Checks Passed*\n`);
+  lines.push(`Token \`${shortenAddress(tokenAddress)}\` appears safe to buy.`);
+  lines.push(`Amount: ${parsed.amount} ETH | Slippage: ${parsed.maxSlippage}%`);
+
+  if (context.requestConfirmation) {
+    const confirmed = await context.requestConfirmation(
+      lines.join("\n") +
+      `\n\nProceed with snipe #${snipeId}?`,
+    );
+    if (!confirmed) {
+      snipeManager.updateStatus(snipeId, "cancelled", "user-rejected");
+      return { success: false, message: `*Snipe #${snipeId} cancelled by user.*` };
+    }
+  }
+
   snipeManager.updateStatus(snipeId, "safe", "passed");
 
   lines.push(
-    `*Safety Checks Passed*\n\n` +
-    `Token \`${shortenAddress(tokenAddress)}\` appears safe to buy.\n` +
-    `Amount: ${parsed.amount} ETH | Slippage: ${parsed.maxSlippage}%\n\n` +
-    `_To execute the swap, use: "Swap ${parsed.amount} ETH for ${tokenAddress} on ${chainName}"_\n` +
+    `\n_To execute the swap, use: "Swap ${parsed.amount} ETH for ${tokenAddress} on ${chainName}"_\n` +
     `_Snipe #${snipeId} is ready._`,
   );
 
@@ -330,21 +342,11 @@ function handleList(
 
   const lines = ["*Your Recent Snipes*\n"];
   for (const snipe of snipes) {
-    const statusEmoji = {
-      pending: "⏳",
-      analyzing: "🔍",
-      safe: "✅",
-      risky: "❌",
-      executed: "🎯",
-      failed: "💥",
-      cancelled: "🚫",
-    }[snipe.status] ?? "❓";
-
     lines.push(
-      `${statusEmoji} *#${snipe.id}* \`${shortenAddress(snipe.token_address)}\` — ${snipe.amount} ETH`,
+      `*#${snipe.id}* \`${shortenAddress(snipe.token_address)}\` — ${snipe.amount} ETH`,
     );
     lines.push(
-      `   Status: ${snipe.status} | Chain: ${CHAIN_NAMES[snipe.chain_id] ?? snipe.chain_id}${snipe.risk_score ? ` | Risk: ${snipe.risk_score}` : ""}`,
+      `   Status: **${snipe.status}** | Chain: ${CHAIN_NAMES[snipe.chain_id] ?? snipe.chain_id}${snipe.risk_score ? ` | Risk: ${snipe.risk_score}` : ""}`,
     );
   }
 

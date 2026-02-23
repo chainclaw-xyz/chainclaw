@@ -114,10 +114,7 @@ export class AgentRuntime {
         continue;
       }
 
-      // Normalize action name: LLM uses underscores (yield_finder) but skills use hyphens (yield-finder)
-      const skillName = intent.action.replace(/_/g, "-");
-
-      if (!this.skillRegistry.has(skillName)) {
+      if (!this.skillRegistry.has(intent.action)) {
         results.push(`I don't have a "${intent.action}" skill yet. This will be available in a future update.`);
         continue;
       }
@@ -138,8 +135,8 @@ export class AgentRuntime {
       };
 
       try {
-        logger.info({ action: skillName, params: intent.params }, "Executing skill");
-        const result = await this.skillRegistry.executeSkill(skillName, intent.params, skillContext);
+        logger.info({ action: intent.action, params: intent.params }, "Executing skill");
+        const result = await this.skillRegistry.executeSkill(intent.action, intent.params, skillContext);
         results.push(result.message);
       } catch (err) {
         logger.error({ err, action: intent.action }, "Skill execution failed");

@@ -197,12 +197,31 @@ async function handleCreate(
     toUpper === "ETH" ? 18 : toInfo.decimals,
   );
 
-  await context.sendReply(
-    `_Creating limit order: Sell ${amount} ${fromUpper} for ${toUpper} at $${limitPrice.toLocaleString("en-US")}..._`,
-  );
-
   // Get current price for comparison
   const currentPrice = await getTokenPrice(fromUpper === "USDC" || fromUpper === "USDT" ? toUpper : fromUpper);
+
+  const priceComparison = currentPrice
+    ? `\nCurrent price: $${currentPrice.toLocaleString("en-US", { maximumFractionDigits: 2 })}`
+    : "";
+
+  // Request user confirmation before submitting
+  if (context.requestConfirmation) {
+    const confirmed = await context.requestConfirmation(
+      `*Confirm Limit Order*\n\n` +
+      `Sell: ${amount} ${fromUpper}\n` +
+      `Buy: ${toUpper} at $${limitPrice.toLocaleString("en-US")}${priceComparison}\n` +
+      `Chain: ${chainId === 1 ? "Ethereum" : `Chain ${chainId}`}\n` +
+      `Expires: 7 days\n\n` +
+      `Approve this order?`,
+    );
+    if (!confirmed) {
+      return { success: false, message: "Limit order cancelled by user." };
+    }
+  }
+
+  await context.sendReply(
+    `_Submitting limit order: Sell ${amount} ${fromUpper} for ${toUpper} at $${limitPrice.toLocaleString("en-US")}..._`,
+  );
 
   try {
     // Create order via CoW Protocol API
@@ -251,10 +270,6 @@ async function handleCreate(
         chainId,
       );
 
-      const priceComparison = currentPrice
-        ? `\nCurrent ${fromUpper} price: $${currentPrice.toLocaleString("en-US", { maximumFractionDigits: 2 })}`
-        : "";
-
       return {
         success: true,
         message:
@@ -278,10 +293,6 @@ async function handleCreate(
       limitPrice,
       chainId,
     );
-
-    const priceComparison = currentPrice
-      ? `\nCurrent ${fromUpper} price: $${currentPrice.toLocaleString("en-US", { maximumFractionDigits: 2 })}`
-      : "";
 
     return {
       success: true,
