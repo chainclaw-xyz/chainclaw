@@ -6,29 +6,8 @@ export default defineConfig({
   themeConfig: {
     nav: [
       { text: "Home", link: "/" },
-      { text: "Guide", link: "/guide/" },
-      { text: "Skills SDK", link: "/skills-sdk/" },
-      { text: "API", link: "/api/" },
+      { text: "GitHub", link: "https://github.com/chainclaw-xyz/chainclaw" },
     ],
-    sidebar: [
-      {
-        text: "Getting Started",
-        items: [
-          { text: "Introduction", link: "/guide/" },
-          { text: "Quick Start", link: "/guide/quickstart" },
-          { text: "Configuration", link: "/guide/configuration" },
-        ],
-      },
-      {
-        text: "Skills SDK",
-        items: [
-          { text: "Overview", link: "/skills-sdk/" },
-          { text: "Creating a Skill", link: "/skills-sdk/creating" },
-          { text: "Manifest", link: "/skills-sdk/manifest" },
-          { text: "Testing", link: "/skills-sdk/testing" },
-        ],
-      },
-    ],
-    socialLinks: [{ icon: "github", link: "https://github.com/chainclaw/chainclaw" }],
+    socialLinks: [{ icon: "github", link: "https://github.com/chainclaw-xyz/chainclaw" }],
   },
 });

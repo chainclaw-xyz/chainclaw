@@ -80,7 +80,7 @@ Without an LLM provider configured, ChainClaw runs in command-only mode — slas
          │              │              │
     ChainManager   WalletManager   TransactionExecutor
     (EVM + Solana) (AES-256-GCM)   ┌──────────────────┐
-                   4 signer types  │ simulate (Tenderly)│
+                   LocalSigner     │ simulate (Tenderly)│
                                    │ risk check (GoPlus) │
                                    │ guardrails (limits)  │
                                    │ MEV protection       │
@@ -98,7 +98,7 @@ chainclaw/
 ├── packages/
 │   ├── core/                # Config (Zod), logger (Pino), shared types
 │   ├── chains/              # EVM + Solana adapters, chain registry
-│   ├── wallet/              # Encrypted wallets, signing (Local/Ledger/Coinbase/Safe)
+│   ├── wallet/              # Encrypted wallets, signing (Local signer; Ledger/Coinbase/Safe planned)
 │   ├── pipeline/            # Tx executor, simulator, guardrails, risk engine, MEV, tx log
 │   ├── skills/              # Built-in skill implementations
 │   ├── skills-sdk/          # SDK for building community skills
@@ -114,12 +114,12 @@ chainclaw/
 
 ## Wallet Types
 
-| Signer | Description |
-|--------|-------------|
-| `LocalSigner` | Private keys stored locally, encrypted with AES-256-GCM |
-| `LedgerSigner` | Hardware wallet — transactions confirmed on device |
-| `CoinbaseSigner` | Server-side wallet via Coinbase AgentKit |
-| `SafeSigner` | Gnosis Safe multisig — propose, collect signatures, execute |
+| Signer | Description | Status |
+|--------|-------------|--------|
+| `LocalSigner` | Private keys stored locally, encrypted with AES-256-GCM | Stable |
+| `LedgerSigner` | Hardware wallet — transactions confirmed on device | Planned |
+| `CoinbaseSigner` | Server-side wallet via Coinbase AgentKit | Planned |
+| `SafeSigner` | Gnosis Safe multisig — propose, collect signatures, execute | Planned |
 
 ## Transaction Safety
 

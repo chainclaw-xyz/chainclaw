@@ -7,10 +7,10 @@ hero:
   actions:
     - theme: brand
       text: Get Started
-      link: /guide/
+      link: https://github.com/chainclaw-xyz/chainclaw#quick-start
     - theme: alt
       text: Skills SDK
-      link: /skills-sdk/
+      link: https://github.com/chainclaw-xyz/chainclaw#building-community-skills
 features:
   - title: Zero-Cost Agents
     details: Run on local open-source LLMs via Ollama. No API subscriptions needed.
