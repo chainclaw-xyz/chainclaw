@@ -49,6 +49,10 @@ ChainClaw includes multiple layers of security by design:
 - **Skill sandboxing** — community skills run with restricted permissions
 - **No custody** — private keys never leave the host machine
 
+## Known Limitations
+
+- **Recovery phrase delivery via chat:** When a wallet is created through a chat channel (Telegram, Discord), the recovery mnemonic is sent as a message. Chat platforms may log messages server-side. Users are warned to delete the message immediately and save the phrase offline. A more secure delivery mechanism is planned.
+
 ## Self-Custody Disclaimer
 
 ChainClaw is self-hosted software. You are solely responsible for:

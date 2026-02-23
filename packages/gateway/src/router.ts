@@ -152,10 +152,15 @@ export class CommandRouter {
               `*Label:* ${wallet.label}`,
               `*Address:* \`${wallet.address}\``,
               "",
-              "*Recovery phrase (save this securely):*",
+              "⚠️ *SECURITY WARNING: Your recovery phrase is shown below.* ⚠️",
+              "• Delete this message after saving your phrase",
+              "• Chat platforms may log messages server-side",
+              "• Never share your recovery phrase with anyone",
+              "",
+              "*Recovery phrase:*",
               `\`${mnemonic}\``,
               "",
-              "_This message will NOT be shown again. Save your recovery phrase now._",
+              "_This message will NOT be shown again. Save your recovery phrase offline and delete this message immediately._",
             ].join("\n"),
           );
           break;
