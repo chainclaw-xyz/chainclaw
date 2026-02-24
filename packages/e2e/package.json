@@ -1,0 +1,25 @@
+{
+  "name": "@chainclaw/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:e2e": "vitest run",
+    "build": "tsc",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@chainclaw/chains": "*",
+    "@chainclaw/core": "*",
+    "@chainclaw/pipeline": "*",
+    "@chainclaw/wallet": "*",
+    "better-sqlite3": "^11.10.0",
+    "viem": "^2.23.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.2.3",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}

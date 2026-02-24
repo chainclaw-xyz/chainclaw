@@ -5,6 +5,10 @@ import type { TransactionRecord, TxStatus } from "./types.js";
 
 const logger = getLogger("tx-log");
 
+function bigintReplacer(_key: string, value: unknown): unknown {
+  return typeof value === "bigint" ? value.toString() : value;
+}
+
 export class TransactionLog {
   private db: Database.Database;
   private insertStmt: Database.Statement;
@@ -67,8 +71,8 @@ export class TransactionLog {
       "pending",
       params.skillName,
       params.intentDescription,
-      params.simulationResult ? JSON.stringify(params.simulationResult) : null,
-      params.guardrailChecks ? JSON.stringify(params.guardrailChecks) : null,
+      params.simulationResult ? JSON.stringify(params.simulationResult, bigintReplacer) : null,
+      params.guardrailChecks ? JSON.stringify(params.guardrailChecks, bigintReplacer) : null,
     );
 
     logger.info({ id, userId: params.userId, skill: params.skillName }, "Transaction logged");
