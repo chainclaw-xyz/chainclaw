@@ -1,5 +1,6 @@
 services:
   chainclaw:
+    image: ghcr.io/chainclaw-xyz/chainclaw:latest
     build: .
     env_file: .env
     ports:

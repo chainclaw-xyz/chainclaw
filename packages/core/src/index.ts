@@ -1,4 +1,4 @@
-export { loadConfig, resetConfig, type Config } from "./config.js";
+export { loadConfig, resetConfig, configSchema, type Config } from "./config.js";
 export { createLogger, getLogger, type Logger } from "./logger.js";
 export {
   computeBackoff,
@@ -33,6 +33,9 @@ export {
   CommandLaneClearedError,
 } from "./command-queue.js";
 export { DiagnosticCollector, type DiagnosticSnapshot } from "./diagnostics.js";
+export { DbMonitor, type DbMonitorOptions, type SizeCheck, type PruneResult } from "./db-monitor.js";
+export { UpdateChecker, compareVersions, type UpdateStatus, type UpdateCheckResult } from "./update-check.js";
+export { ConfigurationManager, type ConfigApplyResult, type ConfigDiffEntry } from "./config-manager.js";
 export {
   fetchWithRetry,
   HttpRetryError,

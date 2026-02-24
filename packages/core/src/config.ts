@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 
 loadDotenv({ path: resolve(process.cwd(), ".env") });
 
-const configSchema = z.object({
+export const configSchema = z.object({
   // Telegram
   telegramBotToken: z.string().optional(),
 
@@ -82,6 +82,10 @@ const configSchema = z.object({
   dataPipelineEnabled: z.boolean().default(false),
   outcomeLabelIntervalMs: z.number().default(300_000),
   reasoningEnrichmentEnabled: z.boolean().default(false),
+
+  // Database maintenance
+  dbMaxSizeMb: z.number().default(500),
+  dbPruneEnabled: z.boolean().default(true),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -137,6 +141,10 @@ export function loadConfig(): Config {
       : 300_000,
     reasoningEnrichmentEnabled:
       process.env.REASONING_ENRICHMENT_ENABLED === "true",
+    dbMaxSizeMb: process.env.DB_MAX_SIZE_MB
+      ? Number(process.env.DB_MAX_SIZE_MB)
+      : 500,
+    dbPruneEnabled: process.env.DB_PRUNE_ENABLED !== "false",
   });
 
   if (!result.success) {

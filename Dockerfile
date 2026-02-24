@@ -1,8 +1,9 @@
 FROM node:20-slim AS base
 WORKDIR /app
 
-# Install dependencies
+# Install dependencies (build tools needed for better-sqlite3 native compilation on arm64)
 FROM base AS deps
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json turbo.json ./
 COPY packages/core/package.json packages/core/
 COPY packages/gateway/package.json packages/gateway/
@@ -27,6 +28,8 @@ RUN ./node_modules/.bin/turbo build --filter='!@chainclaw/docs'
 # Production
 FROM base AS runner
 ENV NODE_ENV=production
+ARG CHAINCLAW_VERSION=dev
+LABEL org.opencontainers.image.version=$CHAINCLAW_VERSION
 
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages/core/dist ./packages/core/dist

@@ -8,6 +8,9 @@ import {
   acquireProcessLock,
   waitForDrain,
   DiagnosticCollector,
+  DbMonitor,
+  UpdateChecker,
+  ConfigurationManager,
   type ProcessLockHandle,
 } from "@chainclaw/core";
 import { ChainManager } from "@chainclaw/chains";
@@ -65,10 +68,15 @@ import { SkillLoader } from "@chainclaw/skills-sdk";
 import { loadPlugins } from "./plugin-loader.js";
 import type { PluginHandle } from "./plugin.js";
 import { createHealthServer } from "./health.js";
+import { shutdownStep } from "./shutdown.js";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { z } from "zod";
 
 async function main(): Promise<void> {
   // ─── Load config ──────────────────────────────────────────
   const config = loadConfig();
+  const configManager = new ConfigurationManager(config);
   createLogger(config.logLevel);
   const logger = getLogger("server");
 
@@ -99,6 +107,15 @@ async function main(): Promise<void> {
   const chainManager = new ChainManager(config);
   const walletManager = new WalletManager(config.walletDir, config.walletPassword);
   const db = getDatabase(config.dataDir);
+  const dbPath = `${config.dataDir}/chainclaw.sqlite`;
+  const dbMonitor = new DbMonitor(dbPath, { maxSizeMb: config.dbMaxSizeMb, pruneEnabled: config.dbPruneEnabled });
+  dbMonitor.start(db);
+
+  // ─── Update checker ─────────────────────────────────────
+  const pkgJson = JSON.parse(readFileSync(resolve("package.json"), "utf-8")) as { version?: string };
+  const updateChecker = new UpdateChecker({ currentVersion: pkgJson.version ?? "0.0.0" });
+  updateChecker.start();
+
   const deliveryQueue = new DeliveryQueue(db);
 
   // ─── Initialize pipeline ─────────────────────────────────
@@ -175,6 +192,74 @@ async function main(): Promise<void> {
       logger.warn({ errors }, "Some community skills failed to load");
     }
   }
+
+  // ─── Config admin skill ─────────────────────────────────
+  skillRegistry.register({
+    name: "config",
+    description: "View or update bot configuration (admin only)",
+    parameters: z.object({
+      action: z.enum(["view", "set", "apply", "discard", "diff"]),
+      key: z.string().optional(),
+      value: z.string().optional(),
+    }),
+    async execute(params: unknown, context) {
+      const { action, key, value } = z.object({
+        action: z.enum(["view", "set", "apply", "discard", "diff"]),
+        key: z.string().optional(),
+        value: z.string().optional(),
+      }).parse(params);
+
+      if (action === "view") {
+        const view = configManager.getRedactedView();
+        const lines = Object.entries(view)
+          .filter(([, v]) => v !== undefined)
+          .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
+          .join("\n");
+        return { success: true, message: `Current config:\n${lines}` };
+      }
+
+      if (action === "set") {
+        if (!key) return { success: false, message: "Missing key. Usage: config set <key> <value>" };
+        if (value === undefined) return { success: false, message: "Missing value. Usage: config set <key> <value>" };
+        try {
+          // Parse value: try JSON first, fall back to string
+          let parsed: unknown = value;
+          try { parsed = JSON.parse(value); } catch { /* use raw string */ }
+          configManager.edit(key as any, parsed as any);
+          return { success: true, message: `Staged: ${key} = ${JSON.stringify(parsed)}\nRun 'config apply' to commit.` };
+        } catch (err) {
+          return { success: false, message: err instanceof Error ? err.message : "Unknown error" };
+        }
+      }
+
+      if (action === "apply") {
+        try {
+          const result = configManager.apply();
+          const parts: string[] = [];
+          if (result.applied.length > 0) parts.push(`Applied (live): ${result.applied.join(", ")}`);
+          if (result.needsRestart.length > 0) parts.push(`Needs restart: ${result.needsRestart.join(", ")}`);
+          if (parts.length === 0) parts.push("No pending changes.");
+          return { success: true, message: parts.join("\n") };
+        } catch (err) {
+          return { success: false, message: err instanceof Error ? err.message : "Validation failed" };
+        }
+      }
+
+      if (action === "discard") {
+        configManager.discard();
+        return { success: true, message: "All pending changes discarded." };
+      }
+
+      if (action === "diff") {
+        const diffs = configManager.diff();
+        if (diffs.length === 0) return { success: true, message: "No changes from startup config." };
+        const lines = diffs.map((d) => `${d.key}: ${JSON.stringify(d.from)} → ${JSON.stringify(d.to)}`).join("\n");
+        return { success: true, message: `Changes from startup:\n${lines}` };
+      }
+
+      return { success: false, message: "Unknown action" };
+    },
+  });
 
   // ─── Initialize agent (LLM + memory) ─────────────────────
   let agentRuntime: AgentRuntime | undefined;
@@ -326,6 +411,8 @@ async function main(): Promise<void> {
     startedAt: Date.now(),
     healthMonitor,
     diagnosticCollector,
+    dbMonitor,
+    updateChecker,
   }, "0.0.0.0");
 
   // ─── Graceful shutdown ────────────────────────────────────
@@ -342,40 +429,50 @@ async function main(): Promise<void> {
     logger.info({ signal }, "Shutting down...");
     const shutdownStart = Date.now();
 
-    // Force exit after timeout
+    // Force exit after global timeout
     const forceTimer = setTimeout(() => {
       logger.error("Shutdown timed out — forcing exit");
       process.exit(1);
     }, SHUTDOWN_TIMEOUT_MS);
     forceTimer.unref();
 
-    // Emit lifecycle hook
+    // Emit lifecycle hook (fire-and-forget)
     void triggerHook(createHookEvent("lifecycle", "shutdown", { signal }));
 
-    // 1. Wait for active command queue tasks to drain
-    const { drained } = await waitForDrain(10_000);
-    if (!drained) {
-      logger.warn("Command queue did not drain within 10s — proceeding with shutdown");
-    }
+    const S = 5; // total shutdown steps
+
+    // 1. Drain command queue
+    await shutdownStep(1, S, "Draining command queue", async () => {
+      const { drained } = await waitForDrain(10_000);
+      if (!drained) logger.warn("Command queue did not drain in time");
+    }, 10_000, shutdownStart);
 
     // 2. Stop background services
-    agentRunner.stopAll();
-    cronService.stop();
-    alertEngine.stop();
-    dcaScheduler.stop();
-    whaleWatchEngine.stop();
-    for (const h of pluginHandles) h.stop();
+    await shutdownStep(2, S, "Stopping background services", () => {
+      agentRunner.stopAll();
+      cronService.stop();
+      alertEngine.stop();
+      dcaScheduler.stop();
+      whaleWatchEngine.stop();
+      dbMonitor.stop();
+      updateChecker.stop();
+      for (const h of pluginHandles) h.stop();
+    }, 5_000, shutdownStart);
 
-    // 3. Stop channels
-    await channelRegistry.stopAll();
+    // 3. Stop channel adapters
+    await shutdownStep(3, S, "Stopping channels", () => channelRegistry.stopAll(), 5_000, shutdownStart);
 
     // 4. Stop monitoring + health
-    healthMonitor.stop();
-    healthServer.close();
+    await shutdownStep(4, S, "Stopping monitoring", () => {
+      healthMonitor.stop();
+      healthServer.close();
+    }, 2_000, shutdownStart);
 
-    // 5. Release process lock + close DB
-    processLock?.release();
-    closeDatabase();
+    // 5. Close DB + release lock
+    await shutdownStep(5, S, "Closing database", () => {
+      processLock?.release();
+      closeDatabase();
+    }, 2_000, shutdownStart);
 
     const elapsed = Date.now() - shutdownStart;
     logger.info({ elapsedMs: elapsed }, "Shutdown complete");
