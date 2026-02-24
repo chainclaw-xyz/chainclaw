@@ -203,6 +203,11 @@ async function main(): Promise<void> {
       value: z.string().optional(),
     }),
     async execute(params: unknown, context) {
+      // Admin-only: config management requires allowlist mode with the user on the list
+      if (config.securityMode !== "allowlist" || !securityGuard.isAllowed(context.userId)) {
+        return { success: false, message: "Permission denied. Config management requires allowlist mode." };
+      }
+
       const { action, key, value } = z.object({
         action: z.enum(["view", "set", "apply", "discard", "diff"]),
         key: z.string().optional(),

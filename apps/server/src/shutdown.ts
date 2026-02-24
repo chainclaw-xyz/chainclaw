@@ -22,12 +22,13 @@ export async function shutdownStep(
   try {
     const result = fn();
     if (result && typeof result.then === "function") {
+      let timer: ReturnType<typeof setTimeout>;
       await Promise.race([
         result,
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(`Timed out after ${timeoutMs}ms`)), timeoutMs),
-        ),
-      ]);
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`Timed out after ${timeoutMs}ms`)), timeoutMs);
+        }),
+      ]).finally(() => clearTimeout(timer!));
     }
     logger.info({ step: tag, elapsedMs: elapsed() }, `Shutdown [${tag}] ${label} done`);
   } catch (err) {

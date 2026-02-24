@@ -25,6 +25,7 @@ export interface UpdateCheckResult {
 export class UpdateChecker {
   private currentVersion: string;
   private checkIntervalMs: number;
+  private initialTimer: ReturnType<typeof setTimeout> | null = null;
   private interval: ReturnType<typeof setInterval> | null = null;
   private _status: UpdateStatus = { latest: null, updateAvailable: false, lastCheckedAt: null };
 
@@ -67,7 +68,8 @@ export class UpdateChecker {
 
   start(): void {
     // Initial check after 30s delay (don't slow down startup)
-    setTimeout(() => {
+    this.initialTimer = setTimeout(() => {
+      this.initialTimer = null;
       void this.checkForUpdate();
     }, 30_000);
 
@@ -79,6 +81,10 @@ export class UpdateChecker {
   }
 
   stop(): void {
+    if (this.initialTimer) {
+      clearTimeout(this.initialTimer);
+      this.initialTimer = null;
+    }
     if (this.interval) {
       clearInterval(this.interval);
       this.interval = null;

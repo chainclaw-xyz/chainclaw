@@ -27,7 +27,11 @@ export interface PruneResult {
   sizeAfter: number;
 }
 
-/** Retention rules: table name → max age in days */
+/**
+ * Retention rules: table name → max age in days.
+ * SAFETY: table/column names are hardcoded constants — never derived from user input.
+ * They are interpolated into SQL strings because SQLite doesn't support parameterized identifiers.
+ */
 const RETENTION_RULES: Array<{ table: string; column: string; days: number; where?: string }> = [
   { table: "conversations", column: "created_at", days: 30 },
   { table: "tx_log", column: "created_at", days: 90 },

@@ -4,6 +4,13 @@ import { triggerHook, createHookEvent } from "./hooks.js";
 
 const logger = getLogger("config-manager");
 
+/** Fields whose values must never appear in logs. */
+const SECRET_FIELDS = new Set([
+  "walletPassword", "anthropicApiKey", "openaiApiKey", "tenderlyApiKey",
+  "oneInchApiKey", "coinbaseApiKeySecret", "embeddingApiKey",
+  "telegramBotToken", "discordBotToken", "slackBotToken", "slackAppToken",
+]);
+
 /** Fields safe to change at runtime without a restart. */
 const HOT_FIELDS = new Set<keyof Config>([
   "logLevel",
@@ -71,7 +78,7 @@ export class ConfigurationManager {
       throw new Error(`Unknown config key: ${String(key)}`);
     }
     this._edited[key] = value;
-    logger.debug({ key, value }, "Config change staged");
+    logger.debug({ key, value: SECRET_FIELDS.has(key) ? "***" : value }, "Config change staged");
   }
 
   /**
@@ -108,7 +115,8 @@ export class ConfigurationManager {
         // Safe to apply at runtime
         (this._current as Record<string, unknown>)[key] = value;
         applied.push(key);
-        logger.info({ key, from: oldValue, to: value }, "Config applied (hot)");
+        const redact = SECRET_FIELDS.has(key);
+        logger.info({ key, from: redact ? "***" : oldValue, to: redact ? "***" : value }, "Config applied (hot)");
       } else {
         needsRestart.push(key);
         logger.info({ key }, "Config change requires restart (cold)");
@@ -156,15 +164,9 @@ export class ConfigurationManager {
    * Get a redacted view of the current config (hides secrets).
    */
   getRedactedView(): Record<string, unknown> {
-    const SECRET_KEYS = new Set([
-      "walletPassword", "anthropicApiKey", "openaiApiKey", "tenderlyApiKey",
-      "oneInchApiKey", "coinbaseApiKeySecret", "embeddingApiKey",
-      "telegramBotToken", "discordBotToken", "slackBotToken", "slackAppToken",
-    ]);
-
     const view: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(this._current)) {
-      view[key] = SECRET_KEYS.has(key) && value ? "***" : value;
+      view[key] = SECRET_FIELDS.has(key) && value ? "***" : value;
     }
     return view;
   }
