@@ -13,6 +13,11 @@ const LANE_MAP: Record<string, string> = {
   portfolio: "query",
   history: "query",
   "risk-check": "query",
+  "yield-finder": "query",
+  "whale-watch": "background",
+  "airdrop-tracker": "query",
+  "limit-order": "tx",
+  snipe: "tx",
   backtest: "background",
   agent: "background",
 };
