@@ -47,6 +47,8 @@ export class LocalSigner implements Signer {
       value: params.value,
       data: params.data,
       gas: params.gas,
+      maxFeePerGas: params.maxFeePerGas,
+      maxPriorityFeePerGas: params.maxPriorityFeePerGas,
       nonce: params.nonce,
     });
   }

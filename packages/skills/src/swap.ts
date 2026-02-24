@@ -5,52 +5,17 @@ import type { TransactionExecutor } from "@chainclaw/pipeline";
 import type { WalletManager } from "@chainclaw/wallet";
 import type { SkillDefinition, SkillExecutionContext } from "./types.js";
 import { getEthPriceUsd } from "./prices.js";
+import { TOKEN_INFO, CHAIN_NAMES, resolveToken } from "./token-addresses.js";
 
 const logger = getLogger("skill-swap");
 
-const swapParams = z.object({
+export const swapParams = z.object({
   fromToken: z.string(),
   toToken: z.string(),
   amount: z.string(),
   chainId: z.number().optional().default(1),
   slippageBps: z.number().optional(),
 });
-
-// Known token addresses per chain
-const TOKEN_ADDRESSES: Record<number, Record<string, { address: Address; decimals: number }>> = {
-  1: {
-    USDC: { address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", decimals: 6 },
-    USDT: { address: "0xdAC17F958D2ee523a2206206994597C13D831ec7", decimals: 6 },
-    WETH: { address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", decimals: 18 },
-    DAI: { address: "0x6B175474E89094C44Da98b954EedeAC495271d0F", decimals: 18 },
-  },
-  8453: {
-    USDC: { address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", decimals: 6 },
-    WETH: { address: "0x4200000000000000000000000000000000000006", decimals: 18 },
-    DAI: { address: "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb", decimals: 18 },
-  },
-  42161: {
-    USDC: { address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", decimals: 6 },
-    USDT: { address: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9", decimals: 6 },
-    WETH: { address: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", decimals: 18 },
-    DAI: { address: "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1", decimals: 18 },
-    ARB: { address: "0x912CE59144191C1204E64559FE8253a0e49E6548", decimals: 18 },
-  },
-  10: {
-    USDC: { address: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", decimals: 6 },
-    USDT: { address: "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58", decimals: 6 },
-    WETH: { address: "0x4200000000000000000000000000000000000006", decimals: 18 },
-    DAI: { address: "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1", decimals: 18 },
-    OP: { address: "0x4200000000000000000000000000000000000042", decimals: 18 },
-  },
-};
-
-const CHAIN_NAMES: Record<number, string> = {
-  1: "Ethereum",
-  8453: "Base",
-  42161: "Arbitrum",
-  10: "Optimism",
-};
 
 interface OneInchQuoteResponse {
   toAmount: string;
@@ -92,18 +57,20 @@ export function createSwapSkill(
       logger.info({ fromToken: fromUpper, toToken: toUpper, amount, chainId, slippageBps }, "Executing swap");
 
       // Resolve token addresses
-      const chainTokens = TOKEN_ADDRESSES[chainId];
+      const chainTokens = TOKEN_INFO[chainId];
       if (!chainTokens && !isFromNative) {
         return { success: false, message: `Chain ${chainId} is not supported for swaps yet.` };
       }
 
       // Use swap endpoint when API key available, quote endpoint otherwise
+      const fromInfo = resolveToken(chainId, fromUpper);
+      const toInfo = resolveToken(chainId, toUpper);
       const quote = await getSwapQuote(
         chainId,
-        isFromNative ? "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" : chainTokens[fromUpper]?.address,
-        toUpper === "ETH" ? "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" : chainTokens[toUpper]?.address,
+        isFromNative ? "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" : fromInfo?.address,
+        toUpper === "ETH" ? "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" : toInfo?.address,
         amount,
-        isFromNative ? 18 : chainTokens[fromUpper]?.decimals ?? 18,
+        isFromNative ? 18 : fromInfo?.decimals ?? 18,
         context.walletAddress as Address,
         slippageBps,
         apiKey,
@@ -117,7 +84,7 @@ export function createSwapSkill(
       }
 
       // Format quote for user
-      const toDecimals = toUpper === "ETH" ? 18 : chainTokens?.[toUpper]?.decimals ?? 18;
+      const toDecimals = toUpper === "ETH" ? 18 : toInfo?.decimals ?? 18;
       const estimatedOutput = formatTokenAmount(quote.toAmount, toDecimals);
 
       await context.sendReply(

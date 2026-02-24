@@ -16,6 +16,7 @@ import { NonceManager } from "./nonce.js";
 import { TransactionLog } from "./txlog.js";
 import { RiskEngine, type RiskEngineConfig } from "./risk/index.js";
 import { MevProtection } from "./mev.js";
+import { GasOptimizer } from "./gas.js";
 
 const logger = getLogger("executor");
 
@@ -40,12 +41,13 @@ export class TransactionExecutor {
   private mevProtection: MevProtection;
   private rpcOverrides: Record<number, string>;
   private enableMevProtection: boolean;
+  private gasOptimizer: GasOptimizer | null;
 
   constructor(
     db: Database.Database,
     simulatorConfig: SimulatorConfig,
     rpcOverrides?: Record<number, string>,
-    options?: { riskConfig?: RiskEngineConfig; enableMevProtection?: boolean },
+    options?: { riskConfig?: RiskEngineConfig; enableMevProtection?: boolean; gasOptimizer?: GasOptimizer },
   ) {
     this.simulator = new TransactionSimulator(simulatorConfig);
     this.guardrails = new Guardrails(db);
@@ -55,6 +57,7 @@ export class TransactionExecutor {
     this.mevProtection = new MevProtection();
     this.rpcOverrides = rpcOverrides ?? {};
     this.enableMevProtection = options?.enableMevProtection ?? true;
+    this.gasOptimizer = options?.gasOptimizer ?? null;
   }
 
   async execute(
@@ -202,12 +205,28 @@ export class TransactionExecutor {
 
       const nonce = await this.nonceManager.getNonce(tx.chainId, tx.from);
 
+      // Estimate EIP-1559 gas fees if optimizer is available
+      let maxFeePerGas = tx.maxFeePerGas;
+      let maxPriorityFeePerGas = tx.maxPriorityFeePerGas;
+      if (this.gasOptimizer && !maxFeePerGas) {
+        try {
+          const fees = await this.gasOptimizer.estimateFees(tx.chainId, tx.gasStrategy ?? "standard");
+          maxFeePerGas = fees.maxFeePerGas;
+          maxPriorityFeePerGas = fees.maxPriorityFeePerGas;
+          logger.info({ strategy: fees.strategy, maxFeePerGas: maxFeePerGas.toString() }, "Gas fees optimized");
+        } catch (err) {
+          logger.warn({ err }, "Gas optimizer failed, proceeding without fee params");
+        }
+      }
+
       const hash = await signer.sendTransaction({
         chainId: tx.chainId,
         to: tx.to,
         value: tx.value,
         data: tx.data,
         gas: simResult.gasEstimate + (simResult.gasEstimate / 10n), // 10% buffer
+        maxFeePerGas,
+        maxPriorityFeePerGas,
         nonce,
         rpcUrl,
       });

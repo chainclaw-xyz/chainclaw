@@ -8,6 +8,7 @@ vi.mock("@chainclaw/core", () => ({
 
 vi.mock("../prices.js", () => ({
   getEthPriceUsd: vi.fn(async () => 3000),
+  getTokenPrice: vi.fn(async () => 3000),
 }));
 
 describe("DcaScheduler", () => {
@@ -86,5 +87,26 @@ describe("DcaScheduler", () => {
     scheduler.updateStatus(id, "user-1", "cancelled");
     const jobs = scheduler.getUserJobs("user-1");
     expect(jobs).toHaveLength(0);
+  });
+
+  it("createJob with smart strategy stores strategy field", () => {
+    const id = scheduler.createJob("user-1", "USDC", "ETH", "100", 1, "daily", null, "0xABC", "smart");
+    const job = scheduler.getJob(id, "user-1");
+    expect(job).not.toBeNull();
+    expect(job!.strategy).toBe("smart");
+  });
+
+  it("createJob defaults to fixed strategy", () => {
+    const id = scheduler.createJob("user-1", "USDC", "ETH", "100", 1, "daily", null, "0xABC");
+    const job = scheduler.getJob(id, "user-1");
+    expect(job!.strategy).toBe("fixed");
+  });
+
+  it("smart strategy columns are added via safe migration", () => {
+    // Verify the columns exist by inserting and reading back
+    const id = scheduler.createJob("user-1", "USDC", "ETH", "100", 1, "weekly", null, "0xABC", "smart");
+    const job = scheduler.getJob(id, "user-1");
+    expect(job!.strategy).toBe("smart");
+    expect(job!.target_value).toBeNull(); // not set until first execution
   });
 });
