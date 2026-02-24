@@ -5,7 +5,8 @@ import { getLogger, fetchWithRetry, type SkillResult } from "@chainclaw/core";
 import type { TransactionExecutor } from "@chainclaw/pipeline";
 import type { WalletManager } from "@chainclaw/wallet";
 import type { SkillDefinition, SkillExecutionContext } from "./types.js";
-import { getEthPriceUsd } from "./prices.js";
+import { getEthPriceUsd, getTokenPrice } from "./prices.js";
+import { resolveToken, getChainName } from "./token-addresses.js";
 
 const logger = getLogger("skill-dca");
 
@@ -18,46 +19,10 @@ const dcaParams = z.object({
   chainId: z.number().optional().default(1),
   frequency: z.enum(["hourly", "daily", "weekly"]).optional(),
   maxExecutions: z.number().optional(),
+  strategy: z.enum(["fixed", "smart"]).optional().default("fixed"),
   // For pause/resume/cancel/status
   jobId: z.number().optional(),
 });
-
-// Token addresses + decimals per chain (mirrors swap.ts)
-const TOKEN_INFO: Record<number, Record<string, { address: Address; decimals: number }>> = {
-  1: {
-    ETH: { address: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE", decimals: 18 },
-    USDC: { address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", decimals: 6 },
-    USDT: { address: "0xdAC17F958D2ee523a2206206994597C13D831ec7", decimals: 6 },
-    WETH: { address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", decimals: 18 },
-    DAI: { address: "0x6B175474E89094C44Da98b954EedeAC495271d0F", decimals: 18 },
-  },
-  8453: {
-    ETH: { address: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE", decimals: 18 },
-    USDC: { address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", decimals: 6 },
-    WETH: { address: "0x4200000000000000000000000000000000000006", decimals: 18 },
-  },
-  42161: {
-    ETH: { address: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE", decimals: 18 },
-    USDC: { address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", decimals: 6 },
-    USDT: { address: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9", decimals: 6 },
-    WETH: { address: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", decimals: 18 },
-    DAI: { address: "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1", decimals: 18 },
-  },
-  10: {
-    ETH: { address: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE", decimals: 18 },
-    USDC: { address: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", decimals: 6 },
-    USDT: { address: "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58", decimals: 6 },
-    WETH: { address: "0x4200000000000000000000000000000000000006", decimals: 18 },
-    DAI: { address: "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1", decimals: 18 },
-  },
-};
-
-const CHAIN_NAMES: Record<number, string> = {
-  1: "Ethereum",
-  8453: "Base",
-  42161: "Arbitrum",
-  10: "Optimism",
-};
 
 const FREQUENCY_MS: Record<string, number> = {
   hourly: 60 * 60 * 1000,
@@ -85,6 +50,8 @@ interface DcaJob {
   next_execution_at: string;
   wallet_address: string;
   created_at: string;
+  strategy: "fixed" | "smart";
+  target_value: string | null;
 }
 
 // ─── DCA Scheduler ──────────────────────────────────────────────
@@ -121,30 +88,49 @@ export class DcaScheduler {
         last_executed_at TEXT,
         next_execution_at TEXT NOT NULL,
         wallet_address TEXT NOT NULL,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        strategy TEXT NOT NULL DEFAULT 'fixed',
+        target_value TEXT
       );
 
       CREATE INDEX IF NOT EXISTS idx_dca_jobs_user ON dca_jobs(user_id);
       CREATE INDEX IF NOT EXISTS idx_dca_jobs_next ON dca_jobs(status, next_execution_at);
     `);
+
+    // Safe migration for existing DBs: add columns if missing
+    this.safeAddColumn("dca_jobs", "strategy", "TEXT NOT NULL DEFAULT 'fixed'");
+    this.safeAddColumn("dca_jobs", "target_value", "TEXT");
+
     logger.debug("DCA jobs table initialized");
+  }
+
+  private safeAddColumn(table: string, column: string, definition: string): void {
+    try {
+      const cols = this.db.pragma(`table_info(${table})`) as Array<{ name: string }>;
+      if (!cols.some((c) => c.name === column)) {
+        this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+        logger.info({ table, column }, "Added missing column");
+      }
+    } catch {
+      // Column already exists or table doesn't exist yet
+    }
   }
 
   createJob(
     userId: string, fromToken: string, toToken: string, amount: string,
     chainId: number, frequency: string, maxExecutions: number | null,
-    walletAddress: string,
+    walletAddress: string, strategy: "fixed" | "smart" = "fixed",
   ): number {
     const intervalMs = FREQUENCY_MS[frequency];
     if (!intervalMs) throw new Error(`Invalid frequency: ${frequency}`);
 
     const nextAt = new Date(Date.now() + intervalMs).toISOString();
     const stmt = this.db.prepare(`
-      INSERT INTO dca_jobs (user_id, from_token, to_token, amount, chain_id, frequency, interval_ms, max_executions, next_execution_at, wallet_address)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO dca_jobs (user_id, from_token, to_token, amount, chain_id, frequency, interval_ms, max_executions, next_execution_at, wallet_address, strategy)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const result = stmt.run(userId, fromToken, toToken, amount, chainId, frequency, intervalMs, maxExecutions, nextAt, walletAddress);
+    const result = stmt.run(userId, fromToken, toToken, amount, chainId, frequency, intervalMs, maxExecutions, nextAt, walletAddress, strategy);
     return Number(result.lastInsertRowid);
   }
 
@@ -201,20 +187,64 @@ export class DcaScheduler {
     }
   }
 
+  private async computeSmartAmount(job: DcaJob): Promise<{ amount: string; skipped: boolean }> {
+    const baseAmount = Number(job.amount);
+    const executionNumber = job.total_executions + 1;
+    const targetValue = baseAmount * executionNumber;
+
+    // Get current price of the target token to compute current holdings value
+    const toPrice = await getTokenPrice(job.to_token);
+    if (!toPrice) {
+      // Can't determine price — fall back to base amount
+      logger.warn({ jobId: job.id, token: job.to_token }, "Smart DCA: price unavailable, using base amount");
+      return { amount: job.amount, skipped: false };
+    }
+
+    // Estimate current holdings: total_spent converted at avg_price gives us approx tokens held
+    // Then multiply by current price to get current value
+    const totalSpent = Number(job.total_spent);
+    const avgPrice = job.avg_price ? Number(job.avg_price) : 0;
+    const tokensHeld = avgPrice > 0 ? totalSpent / avgPrice : 0;
+    const currentValue = tokensHeld * toPrice;
+
+    const deficit = targetValue - currentValue;
+
+    if (deficit <= 0) {
+      // Holdings already above target — skip this round
+      logger.info({ jobId: job.id, targetValue, currentValue }, "Smart DCA: above target, skipping");
+      return { amount: "0", skipped: true };
+    }
+
+    // Buy min(deficit, 2x base) to cap exposure
+    const smartAmount = Math.min(deficit, baseAmount * 2);
+    logger.info({ jobId: job.id, targetValue, currentValue, deficit, smartAmount }, "Smart DCA: computed amount");
+    return { amount: smartAmount.toFixed(6), skipped: false };
+  }
+
   private async executeJob(job: DcaJob): Promise<void> {
     const fromUpper = job.from_token.toUpperCase();
     const toUpper = job.to_token.toUpperCase();
     const chainId = job.chain_id;
 
-    const fromInfo = TOKEN_INFO[chainId]?.[fromUpper];
-    const toInfo = TOKEN_INFO[chainId]?.[toUpper];
+    const fromInfo = resolveToken(chainId, fromUpper);
+    const toInfo = resolveToken(chainId, toUpper);
     if (!fromInfo || !toInfo) {
       logger.warn({ jobId: job.id, fromToken: fromUpper, toToken: toUpper }, "Token not found, skipping DCA");
       return;
     }
 
-    const amountWei = parseUnits(job.amount, fromInfo.decimals);
-    const _isFromNative = fromUpper === "ETH";
+    // Determine swap amount based on strategy
+    let swapAmount = job.amount;
+    if (job.strategy === "smart") {
+      const { amount, skipped } = await this.computeSmartAmount(job);
+      if (skipped) {
+        this.advanceJob(job, "0", null);
+        return;
+      }
+      swapAmount = amount;
+    }
+
+    const amountWei = parseUnits(swapAmount, fromInfo.decimals);
 
     // Build 1inch swap params
     const params = new URLSearchParams({
@@ -267,7 +297,7 @@ export class DcaScheduler {
       {
         userId: job.user_id,
         skillName: "dca",
-        intentDescription: `DCA: swap ${job.amount} ${fromUpper} → ${toUpper} (job #${job.id})`,
+        intentDescription: `DCA: swap ${swapAmount} ${fromUpper} → ${toUpper} (job #${job.id}, ${job.strategy})`,
         ethPriceUsd: ethPrice,
       },
       {},
@@ -276,10 +306,10 @@ export class DcaScheduler {
     if (result.success) {
       const toDecimals = toInfo.decimals;
       const received = Number(BigInt(quote.toAmount)) / 10 ** toDecimals;
-      const spent = Number(job.amount);
+      const spent = Number(swapAmount);
       const price = spent > 0 && received > 0 ? (spent / received).toFixed(6) : null;
-      this.advanceJob(job, job.amount, price);
-      logger.info({ jobId: job.id, executions: job.total_executions + 1 }, "DCA execution succeeded");
+      this.advanceJob(job, swapAmount, price);
+      logger.info({ jobId: job.id, executions: job.total_executions + 1, strategy: job.strategy }, "DCA execution succeeded");
     } else {
       logger.warn({ jobId: job.id, message: result.message }, "DCA swap execution failed");
       // Still advance the schedule so we don't retry immediately
@@ -299,6 +329,9 @@ export class DcaScheduler {
       newAvgPrice = ((prevAvg * prevCount + Number(priceThisRound)) / newTotal).toFixed(6);
     }
 
+    // Update target_value for smart DCA tracking
+    const targetValue = (Number(job.amount) * newTotal).toString();
+
     // Check if completed
     const completed = job.max_executions != null && newTotal >= job.max_executions;
     const newStatus = completed ? "completed" : "active";
@@ -307,9 +340,9 @@ export class DcaScheduler {
     this.db.prepare(`
       UPDATE dca_jobs
       SET total_executions = ?, total_spent = ?, avg_price = ?, last_executed_at = datetime('now'),
-          next_execution_at = ?, status = ?
+          next_execution_at = ?, status = ?, target_value = ?
       WHERE id = ?
-    `).run(newTotal, newSpent, newAvgPrice, nextAt, newStatus, job.id);
+    `).run(newTotal, newSpent, newAvgPrice, nextAt, newStatus, targetValue, job.id);
   }
 }
 
@@ -320,6 +353,7 @@ export function createDcaSkill(scheduler: DcaScheduler): SkillDefinition {
     name: "dca",
     description:
       "Dollar-cost averaging. Create recurring swap schedules (hourly, daily, weekly). " +
+      "Supports fixed (constant amount) and smart (value averaging — buys more on dips, less on rises) strategies. " +
       "Manage with list, pause, resume, cancel, or status.",
     parameters: dcaParams,
 
@@ -358,26 +392,26 @@ function handleCreate(
   const amount = parsed.amount;
   const frequency = parsed.frequency;
   const chainId = parsed.chainId;
+  const strategy = parsed.strategy;
 
   if (!fromToken || !toToken || !amount || !frequency) {
     return { success: false, message: "Missing required fields: fromToken, toToken, amount, and frequency." };
   }
 
-  const chainTokens = TOKEN_INFO[chainId];
-  if (!chainTokens?.[fromToken]) {
-    return { success: false, message: `${fromToken} is not supported on ${CHAIN_NAMES[chainId] ?? `Chain ${chainId}`}.` };
+  if (!resolveToken(chainId, fromToken)) {
+    return { success: false, message: `${fromToken} is not supported on ${getChainName(chainId)}.` };
   }
-  if (!chainTokens?.[toToken]) {
-    return { success: false, message: `${toToken} is not supported on ${CHAIN_NAMES[chainId] ?? `Chain ${chainId}`}.` };
+  if (!resolveToken(chainId, toToken)) {
+    return { success: false, message: `${toToken} is not supported on ${getChainName(chainId)}.` };
   }
 
   const jobId = scheduler.createJob(
     context.userId, fromToken, toToken, amount, chainId,
-    frequency, parsed.maxExecutions ?? null, context.walletAddress!,
+    frequency, parsed.maxExecutions ?? null, context.walletAddress!, strategy,
   );
 
   const maxLabel = parsed.maxExecutions ? ` (${parsed.maxExecutions} executions)` : " (unlimited)";
-  const chainName = CHAIN_NAMES[chainId] ?? `Chain ${chainId}`;
+  const strategyLabel = strategy === "smart" ? "\nStrategy: Smart (value averaging)" : "";
 
   return {
     success: true,
@@ -385,7 +419,7 @@ function handleCreate(
       `*DCA Job #${jobId} Created*\n\n` +
       `${amount} ${fromToken} → ${toToken}\n` +
       `Frequency: ${frequency}\n` +
-      `Chain: ${chainName}${maxLabel}\n\n` +
+      `Chain: ${getChainName(chainId)}${maxLabel}${strategyLabel}\n\n` +
       `_First execution in ~1 ${frequency.replace("ly", "")}._`,
   };
 }
@@ -401,9 +435,9 @@ function handleList(scheduler: DcaScheduler, context: SkillExecutionContext): Sk
   for (const job of jobs) {
     const status = job.status === "paused" ? " (paused)" : "";
     const progress = job.max_executions ? ` ${job.total_executions}/${job.max_executions}` : ` ${job.total_executions} done`;
-    const chainName = CHAIN_NAMES[job.chain_id] ?? `Chain ${job.chain_id}`;
+    const strategyTag = job.strategy === "smart" ? " [smart]" : "";
     lines.push(
-      `*#${job.id}* ${job.amount} ${job.from_token} → ${job.to_token} (${job.frequency}, ${chainName})${status}${progress}`,
+      `*#${job.id}* ${job.amount} ${job.from_token} → ${job.to_token} (${job.frequency}, ${getChainName(job.chain_id)})${strategyTag}${status}${progress}`,
     );
   }
 
@@ -443,24 +477,26 @@ function handleStatus(
     return { success: false, message: `DCA job #${jobId} not found or not yours.` };
   }
 
-  const chainName = CHAIN_NAMES[job.chain_id] ?? `Chain ${job.chain_id}`;
   const progress = job.max_executions
     ? `${job.total_executions}/${job.max_executions}`
     : `${job.total_executions} executions`;
   const avgPrice = job.avg_price ? `\nAvg price: ${job.avg_price}` : "";
   const lastExec = job.last_executed_at ? `\nLast executed: ${job.last_executed_at}` : "\nNot yet executed";
   const nextExec = job.status === "active" ? `\nNext: ${job.next_execution_at}` : "";
+  const strategyLine = job.strategy === "smart"
+    ? `\nStrategy: Smart (value averaging)${job.target_value ? `\nTarget value: ${job.target_value}` : ""}`
+    : "";
 
   return {
     success: true,
     message:
       `*DCA Job #${job.id}*\n\n` +
       `${job.amount} ${job.from_token} → ${job.to_token}\n` +
-      `Chain: ${chainName}\n` +
+      `Chain: ${getChainName(job.chain_id)}\n` +
       `Frequency: ${job.frequency}\n` +
       `Status: ${job.status}\n` +
       `Progress: ${progress}\n` +
       `Total spent: ${job.total_spent} ${job.from_token}` +
-      avgPrice + lastExec + nextExec,
+      avgPrice + strategyLine + lastExec + nextExec,
   };
 }

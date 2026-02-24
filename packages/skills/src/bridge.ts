@@ -5,6 +5,7 @@ import type { TransactionExecutor } from "@chainclaw/pipeline";
 import type { WalletManager } from "@chainclaw/wallet";
 import type { SkillDefinition, SkillExecutionContext } from "./types.js";
 import { getEthPriceUsd } from "./prices.js";
+import { LIFI_NATIVE_TOKEN, resolveToken, getChainName } from "./token-addresses.js";
 
 const logger = getLogger("skill-bridge");
 
@@ -14,52 +15,8 @@ const bridgeParams = z.object({
   fromChainId: z.number(),
   toChainId: z.number(),
   slippageBps: z.number().optional(),
+  prefer: z.enum(["cheapest", "fastest", "recommended"]).optional().default("recommended"),
 });
-
-const CHAIN_NAMES: Record<number, string> = {
-  1: "Ethereum",
-  8453: "Base",
-  42161: "Arbitrum",
-  10: "Optimism",
-};
-
-// Native token address used by Li.Fi
-const NATIVE_TOKEN = "0x0000000000000000000000000000000000000000";
-
-// Token addresses per chain for Li.Fi
-const TOKEN_ADDRESSES: Record<number, Record<string, Address>> = {
-  1: {
-    ETH: NATIVE_TOKEN as Address,
-    USDC: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-    USDT: "0xdAC17F958D2ee523a2206206994597C13D831ec7",
-    DAI: "0x6B175474E89094C44Da98b954EedeAC495271d0F",
-  },
-  8453: {
-    ETH: NATIVE_TOKEN as Address,
-    USDC: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-    DAI: "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb",
-  },
-  42161: {
-    ETH: NATIVE_TOKEN as Address,
-    USDC: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
-    USDT: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
-    DAI: "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1",
-  },
-  10: {
-    ETH: NATIVE_TOKEN as Address,
-    USDC: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
-    USDT: "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58",
-    DAI: "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1",
-  },
-};
-
-// Token decimals
-const TOKEN_DECIMALS: Record<string, number> = {
-  ETH: 18,
-  USDC: 6,
-  USDT: 6,
-  DAI: 18,
-};
 
 interface LiFiQuoteResponse {
   estimate: {
@@ -89,13 +46,28 @@ interface LiFiQuoteResponse {
   };
 }
 
+type RouteOrder = "CHEAPEST" | "FASTEST" | "RECOMMENDED";
+
+interface ParsedRoute {
+  order: RouteOrder;
+  quote: LiFiQuoteResponse;
+  bridgeName: string;
+  estimatedOutput: string;
+  minOutput: string;
+  gasCostUsd: string;
+  durationMin: number;
+  toDecimals: number;
+}
+
 export function createBridgeSkill(
   executor: TransactionExecutor,
   walletManager: WalletManager,
 ): SkillDefinition {
   return {
     name: "bridge",
-    description: "Bridge tokens across chains via Li.Fi. Finds best route for speed and cost.",
+    description:
+      "Bridge tokens across chains via Li.Fi. Compares cheapest, fastest, and recommended routes. " +
+      "Use prefer parameter to select route strategy.",
     parameters: bridgeParams,
 
     async execute(params: unknown, context: SkillExecutionContext): Promise<SkillResult> {
@@ -105,24 +77,26 @@ export function createBridgeSkill(
         return { success: false, message: "No wallet configured. Use /wallet create first." };
       }
 
-      const { token, amount, fromChainId, toChainId } = parsed;
+      const { token, amount, fromChainId, toChainId, prefer } = parsed;
       const tokenUpper = token.toUpperCase();
       const slippageBps = parsed.slippageBps
         ?? (context.preferences?.slippageTolerance ? context.preferences.slippageTolerance * 100 : undefined)
         ?? 100;
 
-      const fromChainName = CHAIN_NAMES[fromChainId] ?? `Chain ${fromChainId}`;
-      const toChainName = CHAIN_NAMES[toChainId] ?? `Chain ${toChainId}`;
+      const fromChainName = getChainName(fromChainId);
+      const toChainName = getChainName(toChainId);
 
-      logger.info({ token: tokenUpper, amount, fromChainId, toChainId }, "Executing bridge");
+      logger.info({ token: tokenUpper, amount, fromChainId, toChainId, prefer }, "Executing bridge");
 
       if (fromChainId === toChainId) {
         return { success: false, message: "Source and destination chains must be different." };
       }
 
-      // Resolve token addresses
-      const fromTokenAddress = TOKEN_ADDRESSES[fromChainId]?.[tokenUpper];
-      const toTokenAddress = TOKEN_ADDRESSES[toChainId]?.[tokenUpper];
+      // Resolve token addresses — use Li.Fi native token for ETH
+      const fromInfo = resolveToken(fromChainId, tokenUpper);
+      const toInfo = resolveToken(toChainId, tokenUpper);
+      const fromTokenAddress = tokenUpper === "ETH" ? LIFI_NATIVE_TOKEN : fromInfo?.address;
+      const toTokenAddress = tokenUpper === "ETH" ? LIFI_NATIVE_TOKEN : toInfo?.address;
 
       if (!fromTokenAddress) {
         return { success: false, message: `${tokenUpper} is not supported on ${fromChainName} for bridging.` };
@@ -131,53 +105,48 @@ export function createBridgeSkill(
         return { success: false, message: `${tokenUpper} is not supported on ${toChainName} for bridging.` };
       }
 
-      const decimals = TOKEN_DECIMALS[tokenUpper] ?? 18;
+      const decimals = fromInfo?.decimals ?? 18;
 
       await context.sendReply(
-        `_Finding best bridge route for ${amount} ${tokenUpper} from ${fromChainName} to ${toChainName}..._`,
+        `_Finding bridge routes for ${amount} ${tokenUpper} from ${fromChainName} to ${toChainName}..._`,
       );
 
-      // Get Li.Fi quote
-      const quote = await getLiFiQuote(
-        fromChainId,
-        toChainId,
-        fromTokenAddress,
-        toTokenAddress,
-        amount,
-        decimals,
-        context.walletAddress as Address,
-        slippageBps,
+      // Fetch all 3 routes in parallel
+      const routes = await getLiFiRoutes(
+        fromChainId, toChainId, fromTokenAddress, toTokenAddress,
+        amount, decimals, context.walletAddress as Address, slippageBps,
       );
 
-      if (!quote) {
+      if (routes.length === 0) {
         return {
           success: false,
           message: `Could not find a bridge route for ${amount} ${tokenUpper} from ${fromChainName} to ${toChainName}. The Li.Fi API may be unavailable or no routes exist for this pair.`,
         };
       }
 
-      // Format estimated output
-      const toDecimals = quote.action.toToken.decimals;
-      const estimatedOutput = formatTokenAmount(quote.estimate.toAmount, toDecimals);
-      const minOutput = formatTokenAmount(quote.estimate.toAmountMin, toDecimals);
-      const durationMin = Math.ceil(quote.estimate.executionDuration / 60);
-      const gasCost = quote.estimate.gasCosts.reduce((sum, g) => sum + Number(g.amountUSD), 0).toFixed(2);
-      const bridgeName = quote.toolDetails?.name ?? quote.tool;
+      // Show route comparison if we have multiple
+      if (routes.length > 1) {
+        await context.sendReply(formatRouteComparison(routes, tokenUpper, amount, fromChainName, toChainName, prefer));
+      }
 
+      // Select the preferred route
+      const preferOrder = prefer.toUpperCase() as RouteOrder;
+      const selectedRoute = routes.find((r) => r.order === preferOrder) ?? routes[0];
+
+      // Show selected route details
       await context.sendReply(
-        `*Bridge Quote*\n\n` +
-        `${amount} ${tokenUpper} (${fromChainName}) → ~${estimatedOutput} ${tokenUpper} (${toChainName})\n` +
-        `Min received: ${minOutput} ${tokenUpper}\n` +
-        `Est. time: ~${durationMin} min\n` +
-        `Gas cost: ~$${gasCost}\n` +
-        `Route: ${bridgeName}\n` +
+        `*Selected Route: ${selectedRoute.bridgeName}* (${selectedRoute.order.toLowerCase()})\n\n` +
+        `${amount} ${tokenUpper} (${fromChainName}) → ~${selectedRoute.estimatedOutput} ${tokenUpper} (${toChainName})\n` +
+        `Min received: ${selectedRoute.minOutput} ${tokenUpper}\n` +
+        `Est. time: ~${selectedRoute.durationMin} min\n` +
+        `Gas cost: ~$${selectedRoute.gasCostUsd}\n` +
         `Slippage: ${slippageBps / 100}%`,
       );
 
-      if (!quote.transactionRequest) {
+      if (!selectedRoute.quote.transactionRequest) {
         return {
           success: true,
-          message: `*Quote:* ${amount} ${tokenUpper} (${fromChainName}) → ~${estimatedOutput} ${tokenUpper} (${toChainName})\n_Bridge execution data not available from Li.Fi for this route._`,
+          message: `*Quote:* ${amount} ${tokenUpper} (${fromChainName}) → ~${selectedRoute.estimatedOutput} ${tokenUpper} (${toChainName})\n_Bridge execution data not available from Li.Fi for this route._`,
         };
       }
 
@@ -187,9 +156,10 @@ export function createBridgeSkill(
           `*Bridge ${amount} ${tokenUpper}*\n\n` +
           `From: ${fromChainName}\n` +
           `To: ${toChainName}\n` +
-          `You receive: ~${estimatedOutput} ${tokenUpper}\n` +
-          `Est. time: ~${durationMin} min\n` +
-          `Gas: ~$${gasCost}\n\n` +
+          `Route: ${selectedRoute.bridgeName}\n` +
+          `You receive: ~${selectedRoute.estimatedOutput} ${tokenUpper}\n` +
+          `Est. time: ~${selectedRoute.durationMin} min\n` +
+          `Gas: ~$${selectedRoute.gasCostUsd}\n\n` +
           `Proceed with this bridge?`,
         );
         if (!confirmed) {
@@ -200,7 +170,9 @@ export function createBridgeSkill(
       // Execute through pipeline
       const signer = walletManager.getSigner(context.walletAddress);
       const ethPrice = await getEthPriceUsd();
-      const txReq = quote.transactionRequest;
+      const txReq = selectedRoute.quote.transactionRequest;
+      const estimatedOutput = selectedRoute.estimatedOutput;
+      const durationMin = selectedRoute.durationMin;
 
       const result = await executor.execute(
         {
@@ -215,7 +187,7 @@ export function createBridgeSkill(
         {
           userId: context.userId,
           skillName: "bridge",
-          intentDescription: `Bridge ${amount} ${tokenUpper} from ${fromChainName} to ${toChainName}`,
+          intentDescription: `Bridge ${amount} ${tokenUpper} from ${fromChainName} to ${toChainName} via ${selectedRoute.bridgeName}`,
           ethPriceUsd: ethPrice,
         },
         {
@@ -248,7 +220,7 @@ export function createBridgeSkill(
   };
 }
 
-async function getLiFiQuote(
+async function getLiFiRoutes(
   fromChainId: number,
   toChainId: number,
   fromTokenAddress: Address,
@@ -257,9 +229,57 @@ async function getLiFiQuote(
   decimals: number,
   walletAddress: Address,
   slippageBps: number,
-): Promise<LiFiQuoteResponse | null> {
+): Promise<ParsedRoute[]> {
   const amountWei = BigInt(Math.round(Number(amount) * 10 ** decimals)).toString();
+  const orders: RouteOrder[] = ["CHEAPEST", "FASTEST", "RECOMMENDED"];
 
+  const results = await Promise.allSettled(
+    orders.map((order) => fetchLiFiQuote(
+      fromChainId, toChainId, fromTokenAddress, toTokenAddress,
+      amountWei, walletAddress, slippageBps, order,
+    )),
+  );
+
+  const routes: ParsedRoute[] = [];
+  const seenTools = new Set<string>();
+
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    if (result.status !== "fulfilled" || !result.value) continue;
+
+    const quote = result.value;
+    const toolKey = `${quote.tool}-${quote.estimate.toAmount}`;
+
+    // Deduplicate routes that return the same bridge/amount
+    if (seenTools.has(toolKey)) continue;
+    seenTools.add(toolKey);
+
+    const toDecimals = quote.action.toToken.decimals;
+    routes.push({
+      order: orders[i],
+      quote,
+      bridgeName: quote.toolDetails?.name ?? quote.tool,
+      estimatedOutput: formatTokenAmount(quote.estimate.toAmount, toDecimals),
+      minOutput: formatTokenAmount(quote.estimate.toAmountMin, toDecimals),
+      gasCostUsd: quote.estimate.gasCosts.reduce((sum, g) => sum + Number(g.amountUSD), 0).toFixed(2),
+      durationMin: Math.ceil(quote.estimate.executionDuration / 60),
+      toDecimals,
+    });
+  }
+
+  return routes;
+}
+
+async function fetchLiFiQuote(
+  fromChainId: number,
+  toChainId: number,
+  fromTokenAddress: Address,
+  toTokenAddress: Address,
+  amountWei: string,
+  walletAddress: Address,
+  slippageBps: number,
+  order: RouteOrder,
+): Promise<LiFiQuoteResponse | null> {
   try {
     const params = new URLSearchParams({
       fromChain: String(fromChainId),
@@ -270,7 +290,7 @@ async function getLiFiQuote(
       fromAddress: walletAddress,
       toAddress: walletAddress,
       slippage: String(slippageBps / 10000), // Li.Fi expects 0-1 range
-      order: "RECOMMENDED",
+      order,
     });
 
     const response = await fetchWithRetry(`https://li.quest/v1/quote?${params.toString()}`, {
@@ -279,15 +299,44 @@ async function getLiFiQuote(
 
     if (!response.ok) {
       const body = await response.text();
-      logger.warn({ status: response.status, body: body.substring(0, 200) }, "Li.Fi quote API error");
+      logger.warn({ status: response.status, body: body.substring(0, 200), order }, "Li.Fi quote API error");
       return null;
     }
 
     return (await response.json()) as LiFiQuoteResponse;
   } catch (err) {
-    logger.error({ err }, "Failed to get Li.Fi quote");
+    logger.error({ err, order }, "Failed to get Li.Fi quote");
     return null;
   }
+}
+
+function formatRouteComparison(
+  routes: ParsedRoute[],
+  token: string,
+  amount: string,
+  fromChain: string,
+  toChain: string,
+  selectedPrefer: string,
+): string {
+  const lines = [
+    `*Bridge Routes: ${amount} ${token} ${fromChain} → ${toChain}*\n`,
+    "```",
+    "Route          | Output       | Gas     | Time",
+    "───────────────┼──────────────┼─────────┼──────",
+  ];
+
+  for (const route of routes) {
+    const marker = route.order.toLowerCase() === selectedPrefer ? " *" : "";
+    const name = (route.bridgeName.substring(0, 14)).padEnd(14);
+    const output = route.estimatedOutput.padEnd(12);
+    const gas = `$${route.gasCostUsd}`.padEnd(7);
+    lines.push(`${name} | ${output} | ${gas} | ~${route.durationMin}m${marker}`);
+  }
+
+  lines.push("```");
+  lines.push(`\\* = selected (${selectedPrefer})`);
+
+  return lines.join("\n");
 }
 
 function formatTokenAmount(rawAmount: string, decimals: number): string {

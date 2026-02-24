@@ -18,6 +18,7 @@ const LANE_MAP: Record<string, string> = {
   "airdrop-tracker": "query",
   "limit-order": "tx",
   snipe: "tx",
+  rebalance: "tx",
   backtest: "background",
   agent: "background",
 };

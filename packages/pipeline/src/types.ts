@@ -2,6 +2,8 @@ import type { Address, Hex } from "viem";
 
 export type TxStatus = "pending" | "simulated" | "approved" | "signed" | "broadcast" | "confirmed" | "failed" | "rejected";
 
+export type GasStrategy = "slow" | "standard" | "fast";
+
 export interface TransactionRequest {
   chainId: number;
   from: Address;
@@ -11,6 +13,7 @@ export interface TransactionRequest {
   gasLimit?: bigint;
   maxFeePerGas?: bigint;
   maxPriorityFeePerGas?: bigint;
+  gasStrategy?: GasStrategy;
 }
 
 export interface SimulationResult {

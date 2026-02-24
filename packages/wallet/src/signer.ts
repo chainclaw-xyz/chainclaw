@@ -6,6 +6,8 @@ export interface SignerTransactionParams {
   value: bigint;
   data?: Hex;
   gas?: bigint;
+  maxFeePerGas?: bigint;
+  maxPriorityFeePerGas?: bigint;
   nonce?: number;
   /** Optional RPC URL override (e.g., for MEV protection) */
   rpcUrl?: string;

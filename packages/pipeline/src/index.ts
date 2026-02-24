@@ -15,6 +15,7 @@ export {
   type ContractListEntry,
 } from "./risk/index.js";
 export { MevProtection } from "./mev.js";
+export { GasOptimizer, type GasFeeEstimate } from "./gas.js";
 export {
   type TransactionRequest,
   type TransactionRecord,
@@ -23,5 +24,6 @@ export {
   type GuardrailCheck,
   type UserLimits,
   type TxStatus,
+  type GasStrategy,
   DEFAULT_LIMITS,
 } from "./types.js";
