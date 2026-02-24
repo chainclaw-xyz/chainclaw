@@ -23,6 +23,8 @@ describe("createLLMProvider", () => {
     dataPipelineEnabled: false,
     outcomeLabelIntervalMs: 300_000,
     reasoningEnrichmentEnabled: false,
+    dbMaxSizeMb: 500,
+    dbPruneEnabled: true,
   };
 
   it("throws when Anthropic API key is missing", () => {
