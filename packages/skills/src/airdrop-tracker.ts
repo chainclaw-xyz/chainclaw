@@ -53,10 +53,9 @@ export function createAirdropTrackerSkill(
   for (const [chainId, chain] of Object.entries(VIEM_CHAINS)) {
     const id = Number(chainId);
     const rpcUrl = rpcOverrides?.[id];
-    clients.set(id, createPublicClient({
-      chain,
-      transport: http(rpcUrl),
-    }) as PublicClient);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const client = createPublicClient({ chain, transport: http(rpcUrl) }) as PublicClient;
+    clients.set(id, client);
   }
 
   return {
@@ -90,10 +89,6 @@ export function createAirdropTrackerSkill(
         const activeChains = chainActivity.filter((c) => c.txCount > 0).length;
 
         // Step 2: Score against protocol-specific criteria
-        const chainsToCheck = parsed.chainId
-          ? [parsed.chainId]
-          : SUPPORTED_CHAINS;
-
         const scores = scoreProtocols(
           totalTxCount,
           activeChains,
@@ -119,7 +114,6 @@ export function createAirdropTrackerSkill(
         lines.push("*Protocol Scores*\n");
 
         for (const score of scores) {
-          const pct = Math.round((score.score / score.maxScore) * 100);
           const bar = progressBar(score.score, score.maxScore);
           lines.push(`*${score.protocol}* ${bar} ${score.score}/${score.maxScore} — ${score.status}`);
           if (score.tips.length > 0) {

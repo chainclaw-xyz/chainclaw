@@ -181,9 +181,10 @@ async function handleCreate(
     return { success: false, message: `Token ${toUpper} not supported for limit orders on chain ${chainId}.` };
   }
 
-  // For ETH → need to wrap to WETH first for CoW Protocol
-  const sellToken = fromUpper === "ETH" ? chainTokens["WETH"]!.address : fromInfo.address;
-  const buyToken = toUpper === "ETH" ? chainTokens["WETH"]!.address : toInfo.address;
+  // For ETH, wrap to WETH for CoW Protocol
+  const weth = chainTokens["WETH"];
+  const sellToken = fromUpper === "ETH" && weth ? weth.address : fromInfo.address;
+  const buyToken = toUpper === "ETH" && weth ? weth.address : toInfo.address;
 
   const sellDecimals = fromUpper === "ETH" ? 18 : fromInfo.decimals;
 

@@ -84,11 +84,9 @@ export class WhaleWatchEngine {
     for (const [chainId, chain] of Object.entries(VIEM_CHAINS)) {
       const id = Number(chainId);
       const rpcUrl = this.rpcOverrides?.[id];
-      const client = createPublicClient({
-        chain,
-        transport: http(rpcUrl),
-      });
-      this.clients.set(id, client as PublicClient);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      const client = createPublicClient({ chain, transport: http(rpcUrl) }) as PublicClient;
+      this.clients.set(id, client);
     }
   }
 
