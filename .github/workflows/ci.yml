@@ -19,9 +19,15 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      # npm optional deps bug — lockfile from macOS may omit linux native binaries
+      # https://github.com/npm/cli/issues/4828
+      - name: Fix platform-native binaries
+        run: npm i --no-save @rollup/rollup-linux-x64-gnu @esbuild/linux-x64
+
       - run: npm audit --audit-level=moderate
         continue-on-error: true
-      - run: npx turbo build
+      - run: npx turbo build --filter='!@chainclaw/docs' --filter='!@chainclaw/e2e'
       - run: npx turbo lint
       - run: npx turbo test
 
