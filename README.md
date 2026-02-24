@@ -42,9 +42,13 @@ Health check: `http://localhost:9090/health`
 | `risk_check` | Token/contract safety analysis via GoPlus Security API |
 | `history` | Transaction history with text, CSV, and JSON export |
 | `workflow` | Chain multiple skills into a single multi-step workflow |
+| `yield_finder` | Find best DeFi yields across protocols via DeFiLlama |
+| `limit_order` | Limit orders via CoW Protocol (Ethereum + Gnosis) |
+| `whale_watch` | Monitor whale addresses and track large movements |
+| `snipe` | Token snipe trading with safety checks and liquidity verification |
+| `airdrop_tracker` | Check airdrop eligibility across major protocols |
 | `backtest` | Backtest trading strategies against historical data |
 | `agent` | Start, stop, and monitor autonomous trading agents |
-| `marketplace` | Browse and subscribe to community agents |
 
 All skills work through slash commands (`/balance`, `/swap`) or natural language ("Swap 1 ETH to USDC on Base"). The LLM intent parser routes natural language to the right skill automatically.
 
@@ -73,7 +77,7 @@ Without an LLM provider configured, ChainClaw runs in command-only mode — slas
                └────────┬────────┘
                         │
                ┌────────▼────────┐
-               │  SkillRegistry  │  14 built-in + community skills
+               │  SkillRegistry  │  17 built-in + community skills
                └────────┬────────┘
                         │
          ┌──────────────┼──────────────┐
@@ -100,11 +104,13 @@ chainclaw/
 │   ├── chains/              # EVM + Solana adapters, chain registry
 │   ├── wallet/              # Encrypted wallets, signing (Local signer; Ledger/Coinbase/Safe planned)
 │   ├── pipeline/            # Tx executor, simulator, guardrails, risk engine, MEV, tx log
-│   ├── skills/              # Built-in skill implementations
+│   ├── skills/              # Built-in skill implementations (17 skills)
 │   ├── skills-sdk/          # SDK for building community skills
 │   ├── agent/               # LLM providers (Anthropic/OpenAI/Ollama), intent parser, memory
 │   ├── agent-sdk/           # Autonomous agent framework, backtest engine
+│   ├── cron/                # Scheduled jobs (DCA, alerts, whale watch polling)
 │   ├── gateway/             # Telegram, Discord, WebChat adapters, rate limiter
+│   ├── e2e/                 # E2E tests against Anvil-forked mainnet
 │   └── docs/                # VitePress documentation site
 ├── docker-compose.yml
 ├── Dockerfile
@@ -308,15 +314,26 @@ npx vitest run --config apps/server/vitest.config.ts
 
 ### Test Suite
 
-377 tests across 56 test files:
+421 tests across 60 test files:
 
 | Category | Tests | Coverage |
 |----------|-------|----------|
-| Unit | 304 | Every package in isolation — skills, pipeline, wallet crypto, chain adapters, intent parsing, agent SDK |
+| Unit | 348 | Every package in isolation — skills, pipeline, wallet crypto, chain adapters, intent parsing, agent SDK, cron |
 | Integration | 67 | Full-stack flows — boot, wallet lifecycle, command routing, skill pipeline, NL-to-skill, background services |
-| Journey | 6 | Persona-based E2E: beginner onboarding, active DeFi trader, portfolio manager, agent creator, DAO treasury |
+| Journey | 6 | Persona-based: beginner onboarding, active DeFi trader, portfolio manager, agent creator, DAO treasury |
 
 Integration tests use a harness that mirrors the production boot sequence with real internal components, mocking only external boundaries (RPCs, HTTP APIs, LLM).
+
+### E2E Tests
+
+E2E tests run against a real Anvil-forked Ethereum mainnet — no mocks:
+
+```bash
+# Requires Foundry (anvil) and a private RPC endpoint
+FORK_RPC_URL=https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY npm run test:e2e
+```
+
+Without `FORK_RPC_URL`, the suite skips gracefully. Tests cover balance reads (native ETH + ERC20) and full transaction execution through the pipeline (simulate → guardrails → sign → broadcast → confirm).
 
 ## Cloud Plugin
 

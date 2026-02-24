@@ -39,15 +39,15 @@ packages/
   core/          # Configuration, types, shared utilities
   chains/        # Chain adapters (Ethereum, Base, Arbitrum, Optimism, Solana)
   wallet/        # Wallet management and signing
-  pipeline/      # Transaction safety pipeline (simulation, risk checks)
-  agent/         # LLM integration and conversational AI
-  skills/        # Built-in DeFi skills (swap, bridge, lend, etc.)
+  pipeline/      # Transaction safety pipeline (simulation, risk checks, MEV, tx log)
+  agent/         # LLM integration, intent parsing, conversational memory
+  skills/        # Built-in DeFi skills (17 — swap, bridge, lend, yield, snipe, etc.)
   skills-sdk/    # SDK for building community skills
   agent-sdk/     # SDK for building autonomous agents
-  marketplace/   # Skill and agent marketplace
+  cron/          # Scheduled jobs (DCA execution, alert polling, whale watching)
   gateway/       # Channel adapters (Telegram, Discord, WebChat)
-  data-pipeline/ # Analytics and data processing
-  security/      # Security utilities and guardrails
+  e2e/           # E2E tests against Anvil-forked Ethereum mainnet
+  docs/          # VitePress documentation site
 apps/
   server/        # Main application entry point
 ```
@@ -58,7 +58,8 @@ apps/
 |---------|-------------|
 | `npm run build` | Build all packages |
 | `npm run dev` | Start in development mode |
-| `npm test` | Run all tests |
+| `npm test` | Run all unit + integration tests |
+| `npm run test:e2e` | Run E2E tests (requires `FORK_RPC_URL` and Anvil) |
 | `npm run lint` | Lint all packages |
 | `npm run clean` | Remove build artifacts |
 

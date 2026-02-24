@@ -1,6 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
 
-const DEFAULT_FORK_URL = "https://eth.llamarpc.com";
 const DEFAULT_PORT = 8545;
 const READY_POLL_INTERVAL_MS = 200;
 const READY_TIMEOUT_MS = 30_000;
@@ -23,7 +22,10 @@ export interface AnvilOptions {
  * Waits for the RPC endpoint to respond before resolving.
  */
 export async function startAnvil(opts: AnvilOptions = {}): Promise<AnvilInstance> {
-  const forkUrl = opts.forkUrl ?? process.env.FORK_RPC_URL ?? DEFAULT_FORK_URL;
+  const forkUrl = opts.forkUrl ?? process.env.FORK_RPC_URL;
+  if (!forkUrl) {
+    throw new Error("forkUrl option or FORK_RPC_URL env var is required");
+  }
   const port = opts.port ?? DEFAULT_PORT;
 
   const args = [
@@ -111,7 +113,7 @@ export async function fundAccount(rpcUrl: string, address: string, weiHex: strin
 
 /** Take an EVM snapshot. Returns the snapshot ID. */
 export async function snapshot(rpcUrl: string): Promise<string> {
-  return anvilRpc(rpcUrl, "evm_snapshot", []);
+  return anvilRpc(rpcUrl, "evm_snapshot", []) as Promise<string>;
 }
 
 /** Revert to a snapshot. */
@@ -124,7 +126,7 @@ export async function mineBlock(rpcUrl: string): Promise<void> {
   await anvilRpc(rpcUrl, "evm_mine", []);
 }
 
-async function anvilRpc(rpcUrl: string, method: string, params: unknown[]): Promise<any> {
+async function anvilRpc(rpcUrl: string, method: string, params: unknown[]): Promise<unknown> {
   const res = await fetch(rpcUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

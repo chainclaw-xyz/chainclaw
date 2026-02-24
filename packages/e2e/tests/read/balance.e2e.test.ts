@@ -48,10 +48,7 @@ describe.skipIf(skip)("balance reads against forked mainnet", () => {
     expect(gasPrice).toBeGreaterThan(0n);
   });
 
-  // ERC20 reads require fetching contract state from the upstream RPC.
-  // Free public RPCs rate-limit these calls. Set FORK_RPC_URL to a
-  // private RPC (Alchemy/Infura) to enable this test.
-  it.skipIf(!process.env.FORK_RPC_URL)("reads ERC20 token balances from forked state", async () => {
+  it("reads ERC20 token balances from forked state", async () => {
     const usdcWhale = "0x55FE002aefF02F77364de339a1292923A15844B8";
     const adapter = createChainAdapter(1, rpcUrl());
     const tokens = await adapter.getTokenBalances(usdcWhale);
