@@ -72,6 +72,6 @@ export class SkillRegistry {
     const lane = LANE_MAP[name] ?? DEFAULT_LANE;
     logger.debug({ skill: name, lane }, "Enqueuing skill execution");
 
-    return enqueueInLane(lane, () => skill.execute(params, context));
+    return enqueueInLane(lane, () => skill.execute(params ?? {}, context));
   }
 }

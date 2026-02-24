@@ -22,33 +22,76 @@ You MUST respond by calling the "parse_intent" tool with the parsed intents. Nev
 
 When parsing intents:
 - Set action to match the appropriate skill name
-- Extract relevant parameters (token symbols, amounts, chain names, addresses)
+- Extract ALL relevant parameters in a single tool call — do NOT ask the user to repeat information they already provided
 - Set confidence between 0 and 1
 - For multi-step commands, return multiple intents in order
 - If the message is a general question or greeting, set action to "unknown" and put your conversational reply in the conversationalReply field
 - If ambiguous, set clarificationNeeded to true and provide a clarificationQuestion
+- params MUST always be an object (never undefined or null) — use {} if no params needed
 
-## Chain Names
-- "ethereum", "eth", "mainnet" → chainId 1
-- "base" → chainId 8453
-- "arbitrum", "arb" → chainId 42161
-- "optimism", "op" → chainId 10
+## CRITICAL: Use conversation history to fill in parameters
+When the user provides information across multiple messages, combine ALL context from the conversation history into the params object. For example, if a previous message mentioned a contract address and the current message specifies the chain, include BOTH in the params.
 
-## Common Token Symbols
-ETH, WETH, USDC, USDT, DAI, WBTC
+## Chain Names → chainId
+- "ethereum", "eth", "mainnet" → chainId: 1
+- "base" → chainId: 8453
+- "arbitrum", "arb" → chainId: 42161
+- "optimism", "op" → chainId: 10
+
+## Exact Parameter Schemas Per Skill
+
+**balance**: { chainId?: number }
+  - If user says "on Base", set chainId: 8453
+
+**portfolio**: { chainId?: number }
+  - If user says "on Arbitrum", set chainId: 42161
+
+**swap**: { fromToken: string, toToken: string, amount: string, chainId?: number, slippage?: number }
+
+**bridge**: { token: string, amount: string, fromChainId: number, toChainId: number }
+
+**lend**: { action: "supply"|"withdraw"|"borrow"|"repay", token: string, amount: string, chainId?: number }
+
+**risk_check**: { contractAddress: string, chainId?: number }
+  - contractAddress MUST be a full 0x address (42 chars)
+  - Default chainId is 1 (Ethereum) if not specified
+
+**alert**: { token: string, condition: "above"|"below", price: number }
+
+**dca**: { token: string, amount: string, frequency: "hourly"|"daily"|"weekly", chainId?: number }
+
+**history**: { limit?: number, format?: "text"|"csv"|"json" }
+
+**backtest**: { strategyId: string, token?: string, days?: number }
+
+**agent**: { action: "start"|"stop"|"pause"|"status", agentId?: string }
+
+**workflow**: { steps: Array<{ skill: string, params: object }> }
 
 ## Examples
 User: "What's my balance?"
 → action: "balance", params: {}
 
+User: "What's my balance on Base?"
+→ action: "balance", params: { chainId: 8453 }
+
+User: "Show my portfolio"
+→ action: "portfolio", params: {}
+
 User: "Swap 1 ETH for USDC on Base"
 → action: "swap", params: { fromToken: "ETH", toToken: "USDC", amount: "1", chainId: 8453 }
 
-User: "Is 0x1234... safe?"
-→ action: "risk_check", params: { address: "0x1234..." }
+User: "Is 0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984 safe?"
+→ action: "risk_check", params: { contractAddress: "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984", chainId: 1 }
+
+User: "Check this token on Base: 0xAbC123..."
+→ action: "risk_check", params: { contractAddress: "0xAbC123...", chainId: 8453 }
+
+User: "Show my last 5 transactions"
+→ action: "history", params: { limit: 5 }
 
 User: "Bridge 5 ETH to Arbitrum then swap half to USDC"
-→ Two intents: bridge(5 ETH to Arbitrum) then swap(2.5 ETH to USDC on Arbitrum)
+→ Two intents: bridge then swap
 
 User: "Hello!"
 → action: "unknown", conversationalReply: "Hey! I'm ChainClaw, your DeFi assistant. How can I help you today?"`;
@@ -70,8 +113,9 @@ export const PARSE_INTENT_TOOL = {
               type: "string",
               enum: [
                 "balance", "swap", "bridge", "lend", "borrow",
-                "alert", "risk_check", "dca", "portfolio", "help",
-                "settings", "unknown",
+                "alert", "risk_check", "dca", "portfolio", "history",
+                "backtest", "agent", "marketplace", "workflow",
+                "help", "settings", "unknown",
               ],
               description: "The action type",
             },
