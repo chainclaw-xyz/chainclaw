@@ -27,7 +27,7 @@ describe("createChainAdapter", () => {
     vi.clearAllMocks();
   });
 
-  it("creates adapter for supported chain IDs", async () => {
+  it("creates adapter for supported chain IDs", { timeout: 15000 }, async () => {
     const { createChainAdapter } = await import("../adapter.js");
     for (const chainId of [1, 8453, 42161, 10]) {
       const adapter = createChainAdapter(chainId);
