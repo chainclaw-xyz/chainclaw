@@ -46,8 +46,8 @@ export class PositionLock {
   /**
    * Build a standard lock key from user, chain, and token.
    */
-  static key(userId: string, chainId: number, tokenAddress: string): string {
-    return `${userId}:${chainId}:${tokenAddress.toLowerCase()}`;
+  static key(userId: string, chainId: number, contractAddress: string): string {
+    return `${userId}:${chainId}:${contractAddress.toLowerCase()}`;
   }
 
   /**

@@ -246,9 +246,13 @@ export class WhaleWatchEngine {
               `Tx: \`${shortenAddress(tx.hash)}\`` +
               flowLine;
 
+            // Analyze flow patterns and send separate signal alert if detected
+            const flowAlert = this.flowTracker.analyze(watch.watched_address, watch.label ?? null);
+            const signalLine = flowAlert ? `\n*Signal: ${flowAlert.signal}* — ${flowAlert.context}` : "";
+
             if (this.notifier) {
               try {
-                await this.notifier(watch.user_id, message);
+                await this.notifier(watch.user_id, message + signalLine);
               } catch (err) {
                 logger.error({ err, watchId: watch.id }, "Failed to send whale alert");
               }

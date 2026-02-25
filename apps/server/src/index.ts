@@ -39,6 +39,8 @@ import {
   SnipeManager,
   createSnipeSkill,
   createAirdropTrackerSkill,
+  createTrailingStopSkill,
+  createPerformanceReviewerSkill,
   getTokenPrice,
 } from "@chainclaw/skills";
 import { createLLMProvider, getDatabase, AgentRuntime, closeDatabase, createEmbeddingProvider } from "@chainclaw/agent";
@@ -176,6 +178,10 @@ async function main(): Promise<void> {
   const snipeManager = new SnipeManager(db);
   skillRegistry.register(createSnipeSkill(snipeManager, executor.getRiskEngine(), executor, walletManager, config.oneInchApiKey));
   skillRegistry.register(createAirdropTrackerSkill(chainManager, rpcOverrides));
+  const trailingStopSkill = createTrailingStopSkill(db);
+  skillRegistry.register(trailingStopSkill);
+  trailingStopSkill.engine.startMonitoring();
+  skillRegistry.register(createPerformanceReviewerSkill(db));
 
   // ─── Agent SDK (backtest + live agents) ─────────────────────
   const historicalData = new HistoricalDataProvider(db);
@@ -480,6 +486,7 @@ async function main(): Promise<void> {
       cronService.stop();
       alertEngine.stop();
       dcaScheduler.stop();
+      trailingStopSkill.engine.stopMonitoring();
       whaleWatchEngine.stop();
       dbMonitor.stop();
       updateChecker.stop();

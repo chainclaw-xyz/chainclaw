@@ -157,7 +157,8 @@ export function createYieldFinderSkill(): SkillDefinition {
       await context.sendReply("_Searching for the best yields across DeFi protocols..._");
 
       try {
-        let pools = await fetchPools();
+        const allPools = await fetchPools();
+        let pools = allPools;
 
         // Filter by token symbol (case-insensitive partial match)
         if (parsed.token) {
@@ -184,8 +185,7 @@ export function createYieldFinderSkill(): SkillDefinition {
         // Filter out pools with null/zero APY
         pools = pools.filter((p) => p.apy != null && p.apy > 0);
 
-        // Score all pools
-        const allPools = await fetchPools(); // Full set for percentile calc
+        // Score filtered pools against full dataset for percentile calc
         const scoredPools = pools.map((p) => ({ pool: p, score: scorePool(p, allPools) })).filter((s) => s.score !== null) as Array<{ pool: DefiLlamaPool; score: YieldScore }>;
 
         // Sort

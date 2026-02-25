@@ -149,7 +149,7 @@ function computeMetrics(
   for (const cid of allChainIds) {
     const name = getChainName(cid) || `Chain ${cid}`;
     chainBreakdown[name] = {
-      txCount: (chainTrades[cid]?.txCount ?? 0) + (txRows.filter((t) => t.chain_id === cid).length - (chainTrades[cid]?.txCount ?? 0)),
+      txCount: txRows.filter((t) => t.chain_id === cid).length,
       gasCost: chainGas[cid] ?? 0,
       tradePnl: chainTrades[cid]?.pnl ?? 0,
     };
