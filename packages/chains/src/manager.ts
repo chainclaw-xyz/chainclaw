@@ -7,7 +7,7 @@ import { getChainInfo } from "./registry.js";
 const logger = getLogger("chain-manager");
 
 // EVM chain IDs that have viem adapters
-const EVM_CHAIN_IDS = [1, 8453, 42161, 10];
+const EVM_CHAIN_IDS = [1, 8453, 42161, 10, 137, 56, 43114, 324, 534352, 81457, 100, 59144, 250, 5000];
 
 export class ChainManager {
   private adapters: Map<number, ChainAdapter> = new Map();
@@ -19,6 +19,16 @@ export class ChainManager {
       8453: config.baseRpcUrl,
       42161: config.arbitrumRpcUrl,
       10: config.optimismRpcUrl,
+      137: config.polygonRpcUrl,
+      56: config.bscRpcUrl,
+      43114: config.avalancheRpcUrl,
+      324: config.zkSyncRpcUrl,
+      534352: config.scrollRpcUrl,
+      81457: config.blastRpcUrl,
+      100: config.gnosisRpcUrl,
+      59144: config.lineaRpcUrl,
+      250: config.fantomRpcUrl,
+      5000: config.mantleRpcUrl,
     };
 
     for (const chainId of EVM_CHAIN_IDS) {

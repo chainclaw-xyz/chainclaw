@@ -24,6 +24,16 @@ const CHAIN_NAMES: Record<number, string> = {
   8453: "Base",
   42161: "Arbitrum One",
   10: "OP Mainnet",
+  137: "Polygon",
+  56: "BNB Chain",
+  43114: "Avalanche C-Chain",
+  324: "zkSync Era",
+  534352: "Scroll",
+  81457: "Blast",
+  100: "Gnosis",
+  59144: "Linea",
+  250: "Fantom",
+  5000: "Mantle",
 };
 
 export function createMockAdapterControls(): MockAdapterControls {
@@ -31,7 +41,8 @@ export function createMockAdapterControls(): MockAdapterControls {
 
   function getOrCreate(chainId: number): MockChainAdapter {
     if (!adapters.has(chainId)) {
-      const symbol = chainId === 900 ? "SOL" : "ETH";
+      const nativeSymbols: Record<number, string> = { 900: "SOL", 137: "MATIC", 56: "BNB", 43114: "AVAX", 100: "XDAI", 250: "FTM", 5000: "MNT" };
+      const symbol = nativeSymbols[chainId] ?? "ETH";
       const name = chainId === 900 ? "Solana" : (CHAIN_NAMES[chainId] ?? "Unknown");
       const decimals = chainId === 900 ? 9 : 18;
 

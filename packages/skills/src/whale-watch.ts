@@ -4,7 +4,7 @@ import { getLogger, type SkillResult } from "@chainclaw/core";
 import type { SkillDefinition, SkillExecutionContext } from "./types.js";
 import { getEthPriceUsd } from "./prices.js";
 import { createPublicClient, http, formatEther, type PublicClient } from "viem";
-import { mainnet, base, arbitrum, optimism } from "viem/chains";
+import { mainnet, base, arbitrum, optimism, polygon, bsc, avalanche, zkSync, scroll, blast, gnosis, linea, fantom, mantle } from "viem/chains";
 
 const logger = getLogger("skill-whale-watch");
 
@@ -33,6 +33,16 @@ const CHAIN_NAMES: Record<number, string> = {
   8453: "Base",
   42161: "Arbitrum",
   10: "Optimism",
+  137: "Polygon",
+  56: "BNB Chain",
+  43114: "Avalanche",
+  324: "zkSync Era",
+  534352: "Scroll",
+  81457: "Blast",
+  100: "Gnosis",
+  59144: "Linea",
+  250: "Fantom",
+  5000: "Mantle",
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -41,6 +51,16 @@ const VIEM_CHAINS: Record<number, any> = {
   8453: base,
   42161: arbitrum,
   10: optimism,
+  137: polygon,
+  56: bsc,
+  43114: avalanche,
+  324: zkSync,
+  534352: scroll,
+  81457: blast,
+  100: gnosis,
+  59144: linea,
+  250: fantom,
+  5000: mantle,
 };
 
 // ─── Whale Watch Engine (Background Service) ──────────────────────────

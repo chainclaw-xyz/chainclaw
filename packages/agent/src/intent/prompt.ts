@@ -37,6 +37,16 @@ When the user provides information across multiple messages, combine ALL context
 - "base" → chainId: 8453
 - "arbitrum", "arb" → chainId: 42161
 - "optimism", "op" → chainId: 10
+- "polygon", "matic" → chainId: 137
+- "bnb", "bsc", "binance" → chainId: 56
+- "avalanche", "avax" → chainId: 43114
+- "zksync" → chainId: 324
+- "scroll" → chainId: 534352
+- "blast" → chainId: 81457
+- "gnosis", "xdai" → chainId: 100
+- "linea" → chainId: 59144
+- "fantom", "ftm" → chainId: 250
+- "mantle", "mnt" → chainId: 5000
 
 ## Exact Parameter Schemas Per Skill
 

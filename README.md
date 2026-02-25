@@ -62,6 +62,16 @@ Without an LLM provider configured, ChainClaw runs in command-only mode — slas
 | Base | 8453 | All |
 | Arbitrum One | 42161 | All |
 | Optimism | 10 | All |
+| Polygon | 137 | All |
+| BNB Chain | 56 | All |
+| Avalanche C-Chain | 43114 | All |
+| zkSync Era | 324 | All except Lend, Limit Order |
+| Scroll | 534352 | All except Lend, Limit Order |
+| Blast | 81457 | All except Lend, Limit Order |
+| Gnosis | 100 | All |
+| Linea | 59144 | All except Lend, Limit Order |
+| Fantom | 250 | All except Lend, Limit Order |
+| Mantle | 5000 | All except Lend, Limit Order |
 | Solana | 900 | Balance, portfolio |
 
 ## Architecture
@@ -171,6 +181,16 @@ BASE_RPC_URL=
 ARBITRUM_RPC_URL=
 OPTIMISM_RPC_URL=
 SOLANA_RPC_URL=
+POLYGON_RPC_URL=
+BSC_RPC_URL=
+AVALANCHE_RPC_URL=
+ZKSYNC_RPC_URL=
+SCROLL_RPC_URL=
+BLAST_RPC_URL=
+GNOSIS_RPC_URL=
+LINEA_RPC_URL=
+FANTOM_RPC_URL=
+MANTLE_RPC_URL=
 
 # Transaction simulation
 TENDERLY_API_KEY=

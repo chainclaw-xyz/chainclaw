@@ -87,12 +87,22 @@ describe("Boot and wiring", () => {
     expect(harness.walletManager.getDefaultAddress()).toBeNull();
   });
 
-  it("chain manager reports 4 supported chains", () => {
+  it("chain manager reports 14 supported EVM chains", () => {
     const chains = harness.chainManager.getSupportedChains();
     expect(chains).toContain(1);
     expect(chains).toContain(8453);
     expect(chains).toContain(42161);
     expect(chains).toContain(10);
-    expect(chains.length).toBe(4);
+    expect(chains).toContain(137);
+    expect(chains).toContain(56);
+    expect(chains).toContain(43114);
+    expect(chains).toContain(324);
+    expect(chains).toContain(534352);
+    expect(chains).toContain(81457);
+    expect(chains).toContain(100);
+    expect(chains).toContain(59144);
+    expect(chains).toContain(250);
+    expect(chains).toContain(5000);
+    expect(chains.length).toBe(14);
   });
 });
