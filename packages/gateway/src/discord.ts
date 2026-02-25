@@ -15,7 +15,7 @@ import {
 import { getLogger } from "@chainclaw/core";
 import type { GatewayDeps } from "./types.js";
 import type { ChannelContext } from "./types.js";
-import type { ChannelAdapter, ChannelStatus } from "./channel-adapter.js";
+import type { ChannelAdapter, ChannelStatus, AlertNotifier } from "./channel-adapter.js";
 import { CommandRouter } from "./router.js";
 import { RateLimiter } from "./rate-limiter.js";
 
@@ -167,6 +167,7 @@ export class DiscordAdapter implements ChannelAdapter {
   readonly label = "Discord";
 
   private client: Client | null = null;
+  private notifier: AlertNotifier | null = null;
   private status: ChannelStatus = {
     connected: false,
     lastMessageAt: null,
@@ -219,8 +220,9 @@ export class DiscordAdapter implements ChannelAdapter {
         return;
       }
 
-      // Defer reply for potentially slow operations
-      await interaction.deferReply();
+      // Wallet responses may contain sensitive data (mnemonics, addresses) — ephemeral
+      const isWallet = interaction.commandName === "wallet";
+      await interaction.deferReply({ ephemeral: isWallet });
 
       const sendFn = async (text: string) => {
         try {
@@ -250,7 +252,12 @@ export class DiscordAdapter implements ChannelAdapter {
             const action = interaction.options.getString("action") ?? "";
             const value = interaction.options.getString("value") ?? "";
             const args = [action, value].filter(Boolean);
-            await router.handleWallet(ctx, args);
+            await router.handleWallet(ctx, args, {
+              onImportMessage: async () => {
+                // Slash command params aren't shown in chat, and response is ephemeral
+                logger.info({ userId }, "Wallet import via Discord (ephemeral)");
+              },
+            });
             break;
           }
 
@@ -298,7 +305,7 @@ export class DiscordAdapter implements ChannelAdapter {
 
       this.status.lastMessageAt = Date.now();
 
-      // Show typing
+      // Show typing indicator with refresh loop (Discord typing lasts ~10s)
       const channel = message.channel as TextChannel;
       try {
         await channel.sendTyping();
@@ -306,8 +313,21 @@ export class DiscordAdapter implements ChannelAdapter {
         // Ignore typing errors
       }
 
-      const ctx = makeMessageContext(message);
-      await router.handleMessage(ctx, text);
+      // eslint-disable-next-line @typescript-eslint/no-misused-promises
+      const typingInterval = setInterval(async () => {
+        try {
+          await channel.sendTyping();
+        } catch {
+          // Ignore typing errors
+        }
+      }, 8_000);
+
+      try {
+        const ctx = makeMessageContext(message);
+        await router.handleMessage(ctx, text);
+      } finally {
+        clearInterval(typingInterval);
+      }
     });
 
     // ─── Ready ────────────────────────────────────────────────
@@ -330,6 +350,25 @@ export class DiscordAdapter implements ChannelAdapter {
 
   getStatus(): ChannelStatus {
     return { ...this.status };
+  }
+
+  setNotifier(fn: AlertNotifier): void {
+    this.notifier = fn;
+  }
+
+  /** Send an alert notification to a user via DM. Used by AlertEngine. */
+  async notify(userId: string, message: string): Promise<void> {
+    if (this.notifier) {
+      await this.notifier(userId, message);
+      return;
+    }
+
+    if (!this.client) {
+      throw new Error("Discord client not initialized");
+    }
+
+    const user = await this.client.users.fetch(userId);
+    await user.send(message);
   }
 }
 
