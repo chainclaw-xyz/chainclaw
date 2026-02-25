@@ -319,6 +319,10 @@ export class TransactionExecutor {
     return this.riskEngine;
   }
 
+  getSimulator(): TransactionSimulator {
+    return this.simulator;
+  }
+
   getPositionLock(): PositionLock {
     return this.positionLock;
   }

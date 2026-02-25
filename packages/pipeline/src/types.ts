@@ -59,6 +59,15 @@ export interface TransactionRecord {
   updatedAt: string;
 }
 
+export interface AntiRugResult {
+  canSell: boolean;
+  sellTax: number;         // percentage
+  netLossPercent: number;  // percentage lost in round-trip
+  buyReceived: string;     // token amount received from buy
+  sellReceived: string;    // ETH received from sell
+  warning?: string;
+}
+
 export interface UserLimits {
   maxPerTx: number;       // USD
   maxPerDay: number;      // USD

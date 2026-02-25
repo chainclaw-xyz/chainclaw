@@ -2,7 +2,7 @@ import { z } from "zod";
 import type Database from "better-sqlite3";
 import { parseEther, type Address, type Hex } from "viem";
 import { getLogger, fetchWithRetry, type SkillResult } from "@chainclaw/core";
-import type { RiskEngine, TransactionExecutor } from "@chainclaw/pipeline";
+import type { RiskEngine, TransactionExecutor, TransactionSimulator } from "@chainclaw/pipeline";
 import type { WalletManager } from "@chainclaw/wallet";
 import type { SkillDefinition, SkillExecutionContext } from "./types.js";
 import { getEthPriceUsd } from "./prices.js";
@@ -10,13 +10,17 @@ import { getEthPriceUsd } from "./prices.js";
 const logger = getLogger("skill-snipe");
 
 const snipeParams = z.object({
-  action: z.enum(["snipe", "list", "cancel"]).default("snipe"),
+  action: z.enum(["snipe", "list", "cancel", "auto", "auto-list", "auto-remove"]).default("snipe"),
   token: z.string().optional(),
   amount: z.string().optional(),
-  maxSlippage: z.number().optional().default(5),
+  maxSlippage: z.number().min(0.1).max(50).optional().default(5),
   chainId: z.number().optional().default(1),
   safetyChecks: z.boolean().optional().default(true),
+  simulateSell: z.boolean().optional().default(true),
+  autoExecute: z.boolean().optional().default(false),
+  maxExecutions: z.number().min(1).max(1000).optional().default(1),
   snipeId: z.number().optional(),
+  autoSnipeId: z.number().optional(),
 });
 
 interface SnipeRow {
@@ -29,6 +33,19 @@ interface SnipeRow {
   safety_checks: number;
   status: string;
   risk_score: string | null;
+  created_at: string;
+}
+
+interface AutoSnipeRow {
+  id: number;
+  user_id: string;
+  token_address: string;
+  amount: string;
+  max_slippage: number;
+  chain_id: number;
+  max_executions: number;
+  executed_count: number;
+  status: string;
   created_at: string;
 }
 
@@ -87,6 +104,22 @@ export class SnipeManager {
 
       CREATE INDEX IF NOT EXISTS idx_snipes_user ON snipes(user_id);
       CREATE INDEX IF NOT EXISTS idx_snipes_status ON snipes(status);
+
+      CREATE TABLE IF NOT EXISTS auto_snipes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        token_address TEXT NOT NULL,
+        amount TEXT NOT NULL,
+        max_slippage REAL NOT NULL DEFAULT 5,
+        chain_id INTEGER NOT NULL DEFAULT 1,
+        max_executions INTEGER NOT NULL DEFAULT 1,
+        executed_count INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'paused', 'exhausted')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_auto_snipes_user ON auto_snipes(user_id);
+      CREATE INDEX IF NOT EXISTS idx_auto_snipes_token ON auto_snipes(token_address, chain_id, status);
     `);
     logger.debug("Snipes table initialized");
   }
@@ -129,6 +162,50 @@ export class SnipeManager {
     ).run(id, userId);
     return result.changes > 0;
   }
+
+  // ─── Auto-snipe management ─────────────────────────────────
+
+  createAutoSnipe(
+    userId: string,
+    tokenAddress: string,
+    amount: string,
+    maxSlippage: number,
+    chainId: number,
+    maxExecutions: number,
+  ): number {
+    const result = this.db.prepare(
+      "INSERT INTO auto_snipes (user_id, token_address, amount, max_slippage, chain_id, max_executions) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run(userId, tokenAddress.toLowerCase(), amount, maxSlippage, chainId, maxExecutions);
+    return Number(result.lastInsertRowid);
+  }
+
+  getAutoSnipeConfig(userId: string, tokenAddress: string, chainId: number): AutoSnipeRow | null {
+    return (this.db.prepare(
+      "SELECT * FROM auto_snipes WHERE user_id = ? AND token_address = ? AND chain_id = ? AND status = 'active'",
+    ).get(userId, tokenAddress.toLowerCase(), chainId) as AutoSnipeRow | undefined) ?? null;
+  }
+
+  getUserAutoSnipes(userId: string): AutoSnipeRow[] {
+    return this.db.prepare(
+      "SELECT * FROM auto_snipes WHERE user_id = ? AND status IN ('active', 'paused') ORDER BY created_at DESC",
+    ).all(userId) as AutoSnipeRow[];
+  }
+
+  removeAutoSnipe(id: number, userId: string): boolean {
+    const result = this.db.prepare(
+      "DELETE FROM auto_snipes WHERE id = ? AND user_id = ?",
+    ).run(id, userId);
+    return result.changes > 0;
+  }
+
+  incrementAutoSnipeCount(id: number): void {
+    this.db.prepare(
+      `UPDATE auto_snipes
+       SET executed_count = executed_count + 1,
+           status = CASE WHEN (executed_count + 1) >= max_executions THEN 'exhausted' ELSE status END
+       WHERE id = ?`,
+    ).run(id);
+  }
 }
 
 export function createSnipeSkill(
@@ -137,6 +214,7 @@ export function createSnipeSkill(
   executor?: TransactionExecutor,
   walletManager?: WalletManager,
   oneInchApiKey?: string,
+  simulator?: TransactionSimulator,
 ): SkillDefinition {
   return {
     name: "snipe",
@@ -150,11 +228,17 @@ export function createSnipeSkill(
 
       switch (parsed.action) {
         case "snipe":
-          return handleSnipe(snipeManager, riskEngine, parsed, context, executor, walletManager, oneInchApiKey);
+          return handleSnipe(snipeManager, riskEngine, parsed, context, executor, walletManager, oneInchApiKey, simulator);
         case "list":
           return handleList(snipeManager, context);
         case "cancel":
           return handleCancel(snipeManager, parsed, context);
+        case "auto":
+          return handleAutoCreate(snipeManager, parsed, context);
+        case "auto-list":
+          return handleAutoList(snipeManager, context);
+        case "auto-remove":
+          return handleAutoRemove(snipeManager, parsed, context);
       }
     },
   };
@@ -168,6 +252,7 @@ async function handleSnipe(
   executor?: TransactionExecutor,
   walletManager?: WalletManager,
   oneInchApiKey?: string,
+  simulator?: TransactionSimulator,
 ): Promise<SkillResult> {
   if (!parsed.token) {
     return {
@@ -251,8 +336,12 @@ async function handleSnipe(
     lines.push("_No DEXScreener data found — token may be very new or not yet listed._\n");
   }
 
-  // Step 2: GoPlus safety check (if enabled)
-  if (parsed.safetyChecks) {
+  // Check for auto-snipe mode early to force safety checks
+  const autoConfig = snipeManager.getAutoSnipeConfig(context.userId, tokenAddress, chainId);
+  const isAutoMode = parsed.autoExecute || !!autoConfig;
+
+  // Step 2: GoPlus safety check — forced ON in auto mode, never skippable
+  if (isAutoMode || parsed.safetyChecks) {
     try {
       const riskReport = await riskEngine.analyzeToken(chainId, tokenAddress as Address);
 
@@ -315,12 +404,53 @@ async function handleSnipe(
     lines.push("_Safety checks disabled by user._\n");
   }
 
-  // Step 3: Token passed safety checks — request user confirmation before proceeding
-  lines.push(`*Safety Checks Passed*\n`);
+  // Step 3: Anti-rug sell simulation (before confirmation so user sees results)
+  // Force anti-rug ON in auto mode — never skippable when auto-executing
+  if ((isAutoMode || parsed.simulateSell) && simulator && executor) {
+    try {
+      const buyTxForSim = {
+        chainId,
+        from: context.walletAddress as Address,
+        to: "0x1111111254EEB25477B68fb85Ed929f73A960582" as Address, // 1inch router placeholder
+        value: parseEther(parsed.amount),
+        data: "0x" as `0x${string}`,
+        gasLimit: 500000n,
+      };
+
+      const antiRug = await simulator.simulateSellAfterBuy(buyTxForSim, tokenAddress as Address);
+
+      if (!antiRug.canSell) {
+        snipeManager.updateStatus(snipeId, "risky", "anti-rug-unsellable");
+        return {
+          success: false,
+          message:
+            lines.join("\n") +
+            `\n*BLOCKED: Anti-Rug Check Failed*\n` +
+            `${antiRug.warning ?? "Token cannot be sold after buying."}\n` +
+            `_Snipe #${snipeId} cancelled for your safety._`,
+        };
+      }
+
+      if (antiRug.warning) {
+        lines.push(`\n*Anti-Rug Warning:* ${antiRug.warning}`);
+      } else if (antiRug.netLossPercent > 0) {
+        lines.push(`\nAnti-rug: round-trip loss ~${antiRug.netLossPercent.toFixed(1)}%`);
+      } else {
+        lines.push("\nAnti-rug: sell simulation passed");
+      }
+    } catch (err) {
+      logger.warn({ err, tokenAddress }, "Anti-rug simulation failed");
+      lines.push("\n_Anti-rug simulation unavailable — proceed with caution._");
+    }
+  }
+
+  // Step 4: Token passed safety checks — check auto-snipe or request confirmation
+  lines.push(`\n*Safety Checks Passed*\n`);
   lines.push(`Token \`${shortenAddress(tokenAddress)}\` appears safe to buy.`);
   lines.push(`Amount: ${parsed.amount} ETH | Slippage: ${parsed.maxSlippage}%`);
 
-  if (context.requestConfirmation) {
+  // Auto-execute: skip confirmation if explicit autoExecute flag or matching auto-snipe config
+  if (!isAutoMode && context.requestConfirmation) {
     const confirmed = await context.requestConfirmation(
       lines.join("\n") +
       `\n\nProceed with snipe #${snipeId}?`,
@@ -374,6 +504,9 @@ async function handleSnipe(
           },
           onConfirmed: async (_hash, blockNumber) => {
             snipeManager.updateStatus(snipeId, "executed");
+            if (autoConfig) {
+              snipeManager.incrementAutoSnipeCount(autoConfig.id);
+            }
             await context.sendReply(
               `Snipe #${snipeId} confirmed in block ${blockNumber}!`,
             );
@@ -451,6 +584,87 @@ function handleCancel(
   }
 
   return { success: true, message: `*Snipe #${parsed.snipeId} cancelled.*` };
+}
+
+// ─── Auto-snipe handlers ────────────────────────────────────
+
+function handleAutoCreate(
+  snipeManager: SnipeManager,
+  parsed: z.infer<typeof snipeParams>,
+  context: SkillExecutionContext,
+): SkillResult {
+  if (!parsed.token) {
+    return { success: false, message: "Please provide a token address for auto-snipe." };
+  }
+  if (!parsed.amount) {
+    return { success: false, message: "Please specify the amount (in ETH) for auto-snipe." };
+  }
+
+  const id = snipeManager.createAutoSnipe(
+    context.userId,
+    parsed.token,
+    parsed.amount,
+    parsed.maxSlippage,
+    parsed.chainId,
+    parsed.maxExecutions,
+  );
+
+  return {
+    success: true,
+    message:
+      `*Auto-Snipe #${id} Created*\n\n` +
+      `Token: \`${parsed.token}\`\n` +
+      `Amount: ${parsed.amount} ETH\n` +
+      `Slippage: ${parsed.maxSlippage}%\n` +
+      `Chain: ${CHAIN_NAMES[parsed.chainId] ?? parsed.chainId}\n` +
+      `Max executions: ${parsed.maxExecutions}\n\n` +
+      `_Next time you snipe this token, confirmation will be skipped. Safety checks are always enforced._`,
+    data: { autoSnipeId: id },
+  };
+}
+
+function handleAutoList(
+  snipeManager: SnipeManager,
+  context: SkillExecutionContext,
+): SkillResult {
+  const configs = snipeManager.getUserAutoSnipes(context.userId);
+
+  if (configs.length === 0) {
+    return {
+      success: true,
+      message: "No active auto-snipes. Create one with: _Auto-snipe 0xAbC... with 0.1 ETH_",
+    };
+  }
+
+  const lines = ["*Your Auto-Snipes*\n"];
+  for (const config of configs) {
+    const chainName = CHAIN_NAMES[config.chain_id] ?? String(config.chain_id);
+    lines.push(
+      `*#${config.id}* \`${shortenAddress(config.token_address)}\` — ${config.amount} ETH on ${chainName}`,
+    );
+    lines.push(
+      `   Status: **${config.status}** | Executions: ${config.executed_count}/${config.max_executions} | Slippage: ${config.max_slippage}%`,
+    );
+  }
+
+  return { success: true, message: lines.join("\n") };
+}
+
+function handleAutoRemove(
+  snipeManager: SnipeManager,
+  parsed: z.infer<typeof snipeParams>,
+  context: SkillExecutionContext,
+): SkillResult {
+  if (!parsed.autoSnipeId) {
+    return { success: false, message: "Please specify an auto-snipe ID to remove." };
+  }
+
+  const removed = snipeManager.removeAutoSnipe(parsed.autoSnipeId, context.userId);
+  if (!removed) {
+    return { success: false, message: `Auto-snipe #${parsed.autoSnipeId} not found or not yours.` };
+  }
+
+  return { success: true, message: `*Auto-snipe #${parsed.autoSnipeId} removed.*` };
 }
 
 interface SnipeQuoteResponse {

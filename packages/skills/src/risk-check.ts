@@ -40,6 +40,15 @@ export function createRiskCheckSkill(riskEngine: RiskEngine): SkillDefinition {
 
       const formatted = riskEngine.formatRiskReport(report);
 
+      // Contract source audit
+      let auditSection = "";
+      try {
+        const auditReport = await riskEngine.auditContract(chainId, contractAddress as Address);
+        auditSection = "\n\n" + riskEngine.formatContractAudit(auditReport);
+      } catch (err) {
+        logger.warn({ err, contractAddress }, "Contract source audit failed");
+      }
+
       // Add action suggestions based on risk level
       let suggestion;
       if (report.riskLevel === "critical" || report.isHoneypot) {
@@ -58,7 +67,7 @@ export function createRiskCheckSkill(riskEngine: RiskEngine): SkillDefinition {
 
       return {
         success: true,
-        message: formatted + suggestion,
+        message: formatted + auditSection + suggestion,
       };
     },
   };

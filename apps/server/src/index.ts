@@ -173,10 +173,12 @@ async function main(): Promise<void> {
   skillRegistry.register(createYieldFinderSkill());
   const limitOrderManager = new LimitOrderManager(db);
   skillRegistry.register(createLimitOrderSkill(limitOrderManager, walletManager));
-  const whaleWatchEngine = new WhaleWatchEngine(db, rpcOverrides);
+  const whaleWatchEngine = new WhaleWatchEngine(db, rpcOverrides, {
+    executor, walletManager, riskEngine: executor.getRiskEngine(), oneInchApiKey: config.oneInchApiKey,
+  });
   skillRegistry.register(createWhaleWatchSkill(whaleWatchEngine));
   const snipeManager = new SnipeManager(db);
-  skillRegistry.register(createSnipeSkill(snipeManager, executor.getRiskEngine(), executor, walletManager, config.oneInchApiKey));
+  skillRegistry.register(createSnipeSkill(snipeManager, executor.getRiskEngine(), executor, walletManager, config.oneInchApiKey, executor.getSimulator()));
   skillRegistry.register(createAirdropTrackerSkill(chainManager, rpcOverrides));
   const trailingStopSkill = createTrailingStopSkill(db);
   skillRegistry.register(trailingStopSkill);
@@ -413,6 +415,21 @@ async function main(): Promise<void> {
       logger.warn({ userId }, "Alert notification failed on all channels");
     });
   }
+
+  // Wire whale watch notifier (same multi-channel pattern as alerts)
+  whaleWatchEngine.setNotifier(async (userId, message) => {
+    for (const adapter of notifyAdapters) {
+      const id = deliveryQueue.enqueue({ channel: adapter.id, recipientId: userId, message });
+      try {
+        await adapter.notify(userId, message);
+        deliveryQueue.ack(id);
+        return;
+      } catch (err) {
+        deliveryQueue.fail(id, err instanceof Error ? err.message : "Unknown error");
+      }
+    }
+    logger.warn({ userId }, "Whale watch notification failed on all channels");
+  });
 
   alertEngine.start();
 

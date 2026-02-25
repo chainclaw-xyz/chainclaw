@@ -3,6 +3,7 @@ import type Database from "better-sqlite3";
 import type { Address } from "viem";
 import { GoPlusClient } from "./goplus.js";
 import { RiskCache } from "./cache.js";
+import { ContractAuditor, type ContractAuditReport } from "./contract-audit.js";
 import type { TokenSafetyReport, RiskDimension } from "./types.js";
 
 const logger = getLogger("risk-engine");
@@ -10,17 +11,20 @@ const logger = getLogger("risk-engine");
 export interface RiskEngineConfig {
   autoBlockThreshold?: number; // Risk score above which to auto-block (default: 80)
   warnThreshold?: number; // Risk score above which to warn (default: 40)
+  explorerApiKeys?: Record<number, string>; // Per-chain Etherscan API keys for contract auditing
 }
 
 export class RiskEngine {
   private goplus: GoPlusClient;
   private cache: RiskCache;
+  private auditor: ContractAuditor;
   private autoBlockThreshold: number;
   private warnThreshold: number;
 
   constructor(db: Database.Database, config?: RiskEngineConfig) {
     this.goplus = new GoPlusClient();
     this.cache = new RiskCache(db);
+    this.auditor = new ContractAuditor(config?.explorerApiKeys);
     this.autoBlockThreshold = config?.autoBlockThreshold ?? 80;
     this.warnThreshold = config?.warnThreshold ?? 40;
   }
@@ -122,6 +126,19 @@ export class RiskEngine {
 
   getUserList(userId: string) {
     return this.cache.getUserList(userId);
+  }
+
+  // ─── Contract auditing ────────────────────────────────────
+
+  async auditContract(
+    chainId: number,
+    address: Address,
+  ): Promise<ContractAuditReport> {
+    return this.auditor.audit(chainId, address);
+  }
+
+  formatContractAudit(report: ContractAuditReport): string {
+    return this.auditor.formatAuditReport(report);
   }
 
   // ─── Report formatting ─────────────────────────────────────

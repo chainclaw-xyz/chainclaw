@@ -1,20 +1,24 @@
 import { z } from "zod";
 import type Database from "better-sqlite3";
-import { getLogger, type SkillResult } from "@chainclaw/core";
+import { getLogger, fetchWithRetry, type SkillResult } from "@chainclaw/core";
 import type { SkillDefinition, SkillExecutionContext } from "./types.js";
 import { getEthPriceUsd } from "./prices.js";
-import { createPublicClient, http, formatEther, type PublicClient } from "viem";
+import { createPublicClient, http, formatEther, parseEther, type PublicClient, type Address, type Hex } from "viem";
 import { mainnet, base, arbitrum, optimism, polygon, bsc, avalanche, zkSync, scroll, blast, gnosis, linea, fantom, mantle } from "viem/chains";
+import type { RiskEngine, TransactionExecutor } from "@chainclaw/pipeline";
+import type { WalletManager } from "@chainclaw/wallet";
 
 const logger = getLogger("skill-whale-watch");
 
 const whaleWatchParams = z.object({
-  action: z.enum(["watch", "list", "remove"]),
+  action: z.enum(["watch", "list", "remove", "copy", "uncopy"]),
   address: z.string().optional(),
   label: z.string().optional(),
   minValueUsd: z.number().optional().default(10_000),
   chainId: z.number().optional().default(1),
   watchId: z.number().optional(),
+  copyAmount: z.string().regex(/^\d+(\.\d+)?$/, "Must be a valid ETH amount").optional(),
+  copyMaxDaily: z.number().min(1).max(100).optional().default(5),
 });
 
 interface WatchRow {
@@ -25,6 +29,11 @@ interface WatchRow {
   min_value_usd: number;
   chain_id: number;
   status: string;
+  auto_copy: number;
+  copy_amount: string | null;
+  copy_max_daily: number;
+  copy_today_count: number;
+  copy_today_reset: string | null;
   created_at: string;
 }
 
@@ -63,9 +72,56 @@ const VIEM_CHAINS: Record<number, any> = {
   5000: mantle,
 };
 
+// Known DEX routers (for detecting whale swaps)
+const KNOWN_DEX_ROUTERS = new Set([
+  "0x7a250d5630b4cf539739df2c5dacb4c659f2488d", // Uniswap V2
+  "0xe592427a0aece92de3edee1f18e0157c05861564", // Uniswap V3
+  "0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad", // Uniswap Universal Router
+  "0x1111111254eeb25477b68fb85ed929f73a960582", // 1inch v5
+  "0x111111125421ca6dc452d289314280a0f8842a65", // 1inch v6
+  "0xdef1c0ded9bec7f1a1670819833240f027b25eff", // 0x Exchange Proxy
+]);
+
+/**
+ * Extract target token from Uniswap V2 swap calldata.
+ * Supports swapExactETHForTokens (0x7ff36ab5) and swapExactETHForTokensSupportingFeeOnTransferTokens (0xb6f9de95).
+ */
+function extractTokenFromSwapData(input: Hex): Address | null {
+  if (!input || input.length < 10) return null;
+  const selector = input.slice(0, 10).toLowerCase();
+
+  if (selector === "0x7ff36ab5" || selector === "0xb6f9de95") {
+    try {
+      // ABI: (uint256 amountOutMin, address[] path, address to, uint256 deadline)
+      const data = input.slice(10); // remove selector
+      const pathOffset = parseInt(data.slice(64, 128), 16) * 2;
+      const pathLen = parseInt(data.slice(pathOffset, pathOffset + 64), 16);
+      if (pathLen >= 2 && pathLen <= 10) {
+        const lastIdx = pathLen - 1;
+        const tokenStart = pathOffset + 64 + lastIdx * 64;
+        const tokenHex = data.slice(tokenStart + 24, tokenStart + 64);
+        if (tokenHex.length === 40) {
+          return `0x${tokenHex}`;
+        }
+      }
+    } catch {
+      // Malformed calldata
+    }
+  }
+
+  return null;
+}
+
 // ─── Whale Watch Engine (Background Service) ──────────────────────────
 
 export type WhaleNotifier = (userId: string, message: string) => Promise<void>;
+
+export interface WhaleWatchDeps {
+  executor?: TransactionExecutor;
+  walletManager?: WalletManager;
+  riskEngine?: RiskEngine;
+  oneInchApiKey?: string;
+}
 
 export class WhaleWatchEngine {
   private pollInterval: ReturnType<typeof setInterval> | null = null;
@@ -77,6 +133,7 @@ export class WhaleWatchEngine {
   constructor(
     private db: Database.Database,
     private rpcOverrides?: Record<number, string>,
+    private deps: WhaleWatchDeps = {},
   ) {
     this.initTable();
     this.initClients();
@@ -98,7 +155,22 @@ export class WhaleWatchEngine {
       CREATE INDEX IF NOT EXISTS idx_whale_watches_user ON whale_watches(user_id);
       CREATE INDEX IF NOT EXISTS idx_whale_watches_status ON whale_watches(status);
     `);
+    // Migration: add copy-trading columns
+    this.safeAddColumn("whale_watches", "auto_copy", "INTEGER NOT NULL DEFAULT 0");
+    this.safeAddColumn("whale_watches", "copy_amount", "TEXT");
+    this.safeAddColumn("whale_watches", "copy_max_daily", "INTEGER NOT NULL DEFAULT 5");
+    this.safeAddColumn("whale_watches", "copy_today_count", "INTEGER NOT NULL DEFAULT 0");
+    this.safeAddColumn("whale_watches", "copy_today_reset", "TEXT");
+
     logger.debug("Whale watches table initialized");
+  }
+
+  private safeAddColumn(table: string, column: string, definition: string): void {
+    try {
+      this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    } catch {
+      // Column already exists — ignore
+    }
   }
 
   private initClients(): void {
@@ -139,6 +211,153 @@ export class WhaleWatchEngine {
       "UPDATE whale_watches SET status = 'deleted' WHERE id = ? AND user_id = ? AND status = 'active'",
     ).run(id, userId);
     return result.changes > 0;
+  }
+
+  // ─── Copy-trading management ────────────────────────────────
+
+  enableCopy(watchId: number, userId: string, copyAmount: string, maxDaily: number): boolean {
+    const result = this.db.prepare(
+      "UPDATE whale_watches SET auto_copy = 1, copy_amount = ?, copy_max_daily = ? WHERE id = ? AND user_id = ? AND status = 'active'",
+    ).run(copyAmount, maxDaily, watchId, userId);
+    return result.changes > 0;
+  }
+
+  disableCopy(watchId: number, userId: string): boolean {
+    const result = this.db.prepare(
+      "UPDATE whale_watches SET auto_copy = 0, copy_amount = NULL, copy_today_count = 0 WHERE id = ? AND user_id = ? AND status = 'active'",
+    ).run(watchId, userId);
+    return result.changes > 0;
+  }
+
+  private resetDailyCountIfNeeded(watchId: number): void {
+    const row = this.db.prepare(
+      "SELECT copy_today_reset FROM whale_watches WHERE id = ?",
+    ).get(watchId) as { copy_today_reset: string | null } | undefined;
+
+    if (!row) return;
+
+    const today = new Date().toISOString().slice(0, 10);
+    if (row.copy_today_reset !== today) {
+      this.db.prepare(
+        "UPDATE whale_watches SET copy_today_count = 0, copy_today_reset = ? WHERE id = ?",
+      ).run(today, watchId);
+    }
+  }
+
+  /**
+   * Atomically claim a daily copy slot. Returns true if a slot was available and claimed.
+   */
+  private claimCopySlot(watchId: number): boolean {
+    const result = this.db.prepare(
+      "UPDATE whale_watches SET copy_today_count = copy_today_count + 1 WHERE id = ? AND copy_today_count < copy_max_daily",
+    ).run(watchId);
+    return result.changes > 0;
+  }
+
+  private async executeCopyTrade(
+    watch: WatchRow,
+    tokenAddress: Address,
+    chainId: number,
+  ): Promise<void> {
+    const { executor, walletManager, riskEngine, oneInchApiKey } = this.deps;
+    if (!executor || !walletManager || !riskEngine || !watch.copy_amount) return;
+
+    // Require 1inch API key for executable swaps
+    if (!oneInchApiKey) {
+      logger.warn({ watchId: watch.id }, "Copy-trade skipped: 1inch API key not configured");
+      try {
+        if (this.notifier) {
+          await this.notifier(watch.user_id, `*Copy-Trade Skipped*\n1inch API key not configured for automated swaps.`);
+        }
+      } catch { /* notification best-effort */ }
+      return;
+    }
+
+    // 1. Risk check
+    try {
+      const risk = await riskEngine.analyzeToken(chainId, tokenAddress);
+      if (risk?.isHoneypot || risk?.riskLevel === "critical") {
+        logger.info({ tokenAddress, watchId: watch.id }, "Copy-trade blocked: unsafe token");
+        try {
+          if (this.notifier) {
+            await this.notifier(watch.user_id,
+              `*Copy-Trade Blocked*\nToken \`${shortenAddress(tokenAddress)}\` failed safety check (${risk?.isHoneypot ? "honeypot" : "critical risk"}).`,
+            );
+          }
+        } catch { /* notification best-effort */ }
+        return;
+      }
+    } catch (err) {
+      logger.warn({ err, tokenAddress }, "Copy-trade risk check failed");
+      return;
+    }
+
+    // 2. Get swap quote from 1inch
+    const walletAddress = walletManager.getDefaultAddress();
+    if (!walletAddress) return;
+
+    try {
+      const amountWei = parseEther(watch.copy_amount).toString();
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+        Authorization: `Bearer ${oneInchApiKey}`,
+      };
+
+      const params = new URLSearchParams({
+        src: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+        dst: tokenAddress,
+        amount: amountWei,
+        from: walletAddress,
+        slippage: "5",
+        disableEstimate: "true",
+      });
+
+      const response = await fetchWithRetry(
+        `https://api.1inch.dev/swap/v6.0/${chainId}/swap?${params.toString()}`,
+        { headers },
+      );
+
+      if (!response.ok) {
+        logger.warn({ status: response.status }, "Copy-trade 1inch swap failed");
+        return;
+      }
+
+      const quote = (await response.json()) as { tx?: { to: string; data: string; value: string; gas: number } };
+      if (!quote.tx) return;
+
+      // 3. Execute swap
+      const signer = walletManager.getSigner(walletAddress);
+      const ethPrice = await getEthPriceUsd();
+
+      const result = await executor.execute(
+        {
+          chainId,
+          from: walletAddress as Address,
+          to: quote.tx.to as Address,
+          value: BigInt(quote.tx.value),
+          data: quote.tx.data as Hex,
+          gasLimit: BigInt(quote.tx.gas),
+        },
+        signer,
+        {
+          userId: watch.user_id,
+          skillName: "whale-watch-copy",
+          intentDescription: `Copy-trade: ${watch.copy_amount} ETH → ${shortenAddress(tokenAddress)}`,
+          ethPriceUsd: ethPrice,
+        },
+      );
+
+      try {
+        if (this.notifier) {
+          const msg = result.success
+            ? `*Copy-Trade Executed*\nBought \`${shortenAddress(tokenAddress)}\` with ${watch.copy_amount} ETH\nTx: \`${result.hash ?? "pending"}\``
+            : `*Copy-Trade Failed*\n${result.message}`;
+          await this.notifier(watch.user_id, msg);
+        }
+      } catch { /* notification best-effort */ }
+    } catch (err) {
+      logger.error({ err, tokenAddress, watchId: watch.id }, "Copy-trade execution failed");
+    }
   }
 
   start(pollIntervalMs = 30_000): void {
@@ -255,6 +474,24 @@ export class WhaleWatchEngine {
                 await this.notifier(watch.user_id, message + signalLine);
               } catch (err) {
                 logger.error({ err, watchId: watch.id }, "Failed to send whale alert");
+              }
+            }
+
+            // Copy-trade: auto-copy when whale sends to a known DEX router
+            if (watch.auto_copy === 1 && from === watch.watched_address.toLowerCase() && to && KNOWN_DEX_ROUTERS.has(to)) {
+              const tokenAddress = extractTokenFromSwapData(tx.input);
+              if (tokenAddress) {
+                this.resetDailyCountIfNeeded(watch.id);
+                // Atomic claim: increment count and check limit in a single UPDATE
+                if (this.claimCopySlot(watch.id)) {
+                  this.executeCopyTrade(watch, tokenAddress, chainId).catch((err) => {
+                    logger.error({ err, watchId: watch.id }, "Copy-trade failed");
+                  });
+                } else {
+                  logger.info({ watchId: watch.id }, "Copy-trade: daily limit reached");
+                }
+              } else {
+                logger.debug({ watchId: watch.id, to, selector: tx.input.slice(0, 10) }, "Copy-trade: could not extract token from swap calldata");
               }
             }
           }
@@ -418,6 +655,10 @@ export function createWhaleWatchSkill(engine: WhaleWatchEngine): SkillDefinition
           return handleList(engine, context);
         case "remove":
           return handleRemove(engine, parsed, context);
+        case "copy":
+          return handleCopy(engine, parsed, context);
+        case "uncopy":
+          return handleUncopy(engine, parsed, context);
       }
     },
   };
@@ -491,8 +732,11 @@ function handleList(
     lines.push(
       `*#${watch.id}* \`${shortenAddress(watch.watched_address)}\`${labelStr}`,
     );
+    const copyStr = watch.auto_copy
+      ? ` | Copy: ON ${watch.copy_amount} ETH, ${watch.copy_today_count}/${watch.copy_max_daily} daily`
+      : "";
     lines.push(
-      `   Chain: ${chainName} | Min: $${watch.min_value_usd.toLocaleString("en-US")}`,
+      `   Chain: ${chainName} | Min: $${watch.min_value_usd.toLocaleString("en-US")}${copyStr}`,
     );
   }
 
@@ -514,6 +758,50 @@ function handleRemove(
   }
 
   return { success: true, message: `*Watch #${parsed.watchId} removed.*` };
+}
+
+function handleCopy(
+  engine: WhaleWatchEngine,
+  parsed: z.infer<typeof whaleWatchParams>,
+  context: SkillExecutionContext,
+): SkillResult {
+  if (!parsed.watchId) {
+    return { success: false, message: "Please specify a watch ID to enable copy-trading on." };
+  }
+  if (!parsed.copyAmount) {
+    return { success: false, message: "Please specify a copy amount (in ETH).\n\nExample: _Copy watch #1 with 0.1 ETH_" };
+  }
+
+  const success = engine.enableCopy(parsed.watchId, context.userId, parsed.copyAmount, parsed.copyMaxDaily);
+  if (!success) {
+    return { success: false, message: `Watch #${parsed.watchId} not found or not yours.` };
+  }
+
+  return {
+    success: true,
+    message:
+      `*Copy-Trading Enabled on Watch #${parsed.watchId}*\n\n` +
+      `Amount: ${parsed.copyAmount} ETH per trade\n` +
+      `Max daily: ${parsed.copyMaxDaily} trades\n\n` +
+      `_When this whale swaps on a known DEX, a copy-trade will execute automatically. Safety checks are always enforced._`,
+  };
+}
+
+function handleUncopy(
+  engine: WhaleWatchEngine,
+  parsed: z.infer<typeof whaleWatchParams>,
+  context: SkillExecutionContext,
+): SkillResult {
+  if (!parsed.watchId) {
+    return { success: false, message: "Please specify a watch ID to disable copy-trading on." };
+  }
+
+  const success = engine.disableCopy(parsed.watchId, context.userId);
+  if (!success) {
+    return { success: false, message: `Watch #${parsed.watchId} not found or not yours.` };
+  }
+
+  return { success: true, message: `*Copy-trading disabled on watch #${parsed.watchId}.*` };
 }
 
 function shortenAddress(address: string): string {
