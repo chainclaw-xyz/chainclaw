@@ -19,6 +19,8 @@ const LANE_MAP: Record<string, string> = {
   "limit-order": "tx",
   snipe: "tx",
   rebalance: "tx",
+  "trailing-stop": "tx",
+  "performance-reviewer": "background",
   backtest: "background",
   agent: "background",
 };

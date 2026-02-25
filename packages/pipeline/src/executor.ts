@@ -17,6 +17,7 @@ import { TransactionLog } from "./txlog.js";
 import { RiskEngine, type RiskEngineConfig } from "./risk/index.js";
 import { MevProtection } from "./mev.js";
 import { GasOptimizer } from "./gas.js";
+import { PositionLock, type LockHandle } from "./position-lock.js";
 
 const logger = getLogger("executor");
 
@@ -42,12 +43,13 @@ export class TransactionExecutor {
   private rpcOverrides: Record<number, string>;
   private enableMevProtection: boolean;
   private gasOptimizer: GasOptimizer | null;
+  private positionLock: PositionLock;
 
   constructor(
     db: Database.Database,
     simulatorConfig: SimulatorConfig,
     rpcOverrides?: Record<number, string>,
-    options?: { riskConfig?: RiskEngineConfig; enableMevProtection?: boolean; gasOptimizer?: GasOptimizer },
+    options?: { riskConfig?: RiskEngineConfig; enableMevProtection?: boolean; gasOptimizer?: GasOptimizer; positionLock?: PositionLock },
   ) {
     this.simulator = new TransactionSimulator(simulatorConfig);
     this.guardrails = new Guardrails(db);
@@ -58,6 +60,7 @@ export class TransactionExecutor {
     this.rpcOverrides = rpcOverrides ?? {};
     this.enableMevProtection = options?.enableMevProtection ?? true;
     this.gasOptimizer = options?.gasOptimizer ?? null;
+    this.positionLock = options?.positionLock ?? new PositionLock();
   }
 
   async execute(
@@ -67,6 +70,17 @@ export class TransactionExecutor {
     callbacks: ExecutionCallbacks = {},
   ): Promise<{ txId: string; hash?: Hash; success: boolean; message: string }> {
     const ethPriceUsd = meta.ethPriceUsd ?? 2500; // fallback
+
+    // 0. Acquire position lock to prevent concurrent operations on the same token
+    const lockKey = PositionLock.key(meta.userId, tx.chainId, tx.to);
+    let lockHandle: LockHandle;
+    try {
+      lockHandle = await this.positionLock.acquire(lockKey, "exclusive", 30_000);
+    } catch {
+      return { txId: "", success: false, message: `Could not acquire position lock on ${tx.to} — another operation is in progress` };
+    }
+
+    try {
 
     // 1. Simulate
     logger.info({ chainId: tx.chainId, to: tx.to }, "Step 1: Simulating transaction");
@@ -252,9 +266,15 @@ export class TransactionExecutor {
       });
 
       if (receipt.status === "success") {
+        // Compute gas cost in USD: gasUsed * effectiveGasPrice (in wei) → ETH → USD
+        const gasCostWei = receipt.gasUsed * receipt.effectiveGasPrice;
+        const gasCostEth = Number(formatEther(gasCostWei));
+        const gasCostUsd = gasCostEth * ethPriceUsd;
+
         this.txLog.updateStatus(txId, "confirmed", {
           gasUsed: receipt.gasUsed.toString(),
           gasPrice: receipt.effectiveGasPrice.toString(),
+          gasCostUsd,
           blockNumber: Number(receipt.blockNumber),
         });
 
@@ -280,6 +300,11 @@ export class TransactionExecutor {
 
       return { txId, success: false, message: `Transaction failed: ${errorMsg}` };
     }
+
+    } finally {
+      // Always release the position lock
+      this.positionLock.release(lockHandle);
+    }
   }
 
   getTransactionLog(): TransactionLog {
@@ -292,5 +317,9 @@ export class TransactionExecutor {
 
   getRiskEngine(): RiskEngine {
     return this.riskEngine;
+  }
+
+  getPositionLock(): PositionLock {
+    return this.positionLock;
   }
 }

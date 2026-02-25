@@ -125,7 +125,7 @@ export class SnipeManager {
 
   cancelSnipe(id: number, userId: string): boolean {
     const result = this.db.prepare(
-      "UPDATE snipes SET status = 'cancelled' WHERE id = ? AND user_id = ? AND status IN ('pending', 'analyzing')",
+      "UPDATE snipes SET status = 'cancelled' WHERE id = ? AND user_id = ? AND status IN ('pending', 'analyzing', 'safe')",
     ).run(id, userId);
     return result.changes > 0;
   }
@@ -529,7 +529,7 @@ async function fetchDexScreenerPair(
       .filter((p) => p.chainId === chainName)
       .sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0));
 
-    return chainPairs[0] ?? data.pairs[0];
+    return chainPairs[0] ?? null;
   } catch (err) {
     logger.warn({ err, tokenAddress }, "Failed to fetch DEXScreener data");
     return null;

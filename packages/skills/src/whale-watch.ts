@@ -72,6 +72,7 @@ export class WhaleWatchEngine {
   private notifier: WhaleNotifier | null = null;
   private clients: Map<number, PublicClient> = new Map();
   private lastProcessedBlock: Map<number, bigint> = new Map();
+  readonly flowTracker = new FlowTracker();
 
   constructor(
     private db: Database.Database,
@@ -229,16 +230,29 @@ export class WhaleWatchEngine {
             const counterparty = direction === "sent" ? (tx.to ?? "unknown") : tx.from;
             const labelStr = watch.label ? `${watch.label} (${shortenAddress(watch.watched_address)})` : shortenAddress(watch.watched_address);
 
+            // Record flow for tracking
+            const flowDir = direction === "received" ? "in" as const : "out" as const;
+            this.flowTracker.record(watch.watched_address, valueEth, flowDir);
+
+            // Enrich alert with flow context
+            const flowSummary = this.flowTracker.getSummary(watch.watched_address);
+            const flowLine = flowSummary ? `\n_${flowSummary}_` : "";
+
             const message =
               `*Whale Alert*\n\n` +
               `${labelStr} ${direction} ${valueEth.toFixed(4)} ETH ($${formatUsd(valueUsd)})\n` +
               `→ ${direction === "sent" ? "To" : "From"}: \`${shortenAddress(counterparty)}\`\n` +
               `Chain: ${chainName} | Block: ${block.number?.toLocaleString("en-US")}\n` +
-              `Tx: \`${shortenAddress(tx.hash)}\``;
+              `Tx: \`${shortenAddress(tx.hash)}\`` +
+              flowLine;
+
+            // Analyze flow patterns and send separate signal alert if detected
+            const flowAlert = this.flowTracker.analyze(watch.watched_address, watch.label ?? null);
+            const signalLine = flowAlert ? `\n*Signal: ${flowAlert.signal}* — ${flowAlert.context}` : "";
 
             if (this.notifier) {
               try {
-                await this.notifier(watch.user_id, message);
+                await this.notifier(watch.user_id, message + signalLine);
               } catch (err) {
                 logger.error({ err, watchId: watch.id }, "Failed to send whale alert");
               }
@@ -251,6 +265,138 @@ export class WhaleWatchEngine {
     }
   }
 }
+
+// ─── Flow Tracker (Smart Money Flow Analysis) ─────────────────────────
+
+interface FlowSnapshot {
+  address: string;
+  timestamp: number;
+  netFlowEth: number;     // positive = accumulating, negative = distributing
+  txCount: number;
+}
+
+type FlowSignal = "ACCUMULATION" | "DISTRIBUTION" | "FLOW_ACCELERATION" | "FLOW_REVERSAL";
+
+interface FlowAlert {
+  address: string;
+  label: string | null;
+  signal: FlowSignal;
+  context: string;
+}
+
+class FlowTracker {
+  // Rolling window of flow snapshots per address (last 24h)
+  private snapshots = new Map<string, FlowSnapshot[]>();
+  private readonly maxAgeMs = 24 * 60 * 60 * 1000; // 24h
+
+  /**
+   * Record a transaction flow for a watched address.
+   */
+  record(address: string, valueEth: number, direction: "in" | "out"): void {
+    const addr = address.toLowerCase();
+    const now = Date.now();
+
+    let snaps = this.snapshots.get(addr);
+    if (!snaps) {
+      snaps = [];
+      this.snapshots.set(addr, snaps);
+    }
+
+    // Prune old snapshots
+    snaps = snaps.filter((s) => now - s.timestamp < this.maxAgeMs);
+    this.snapshots.set(addr, snaps);
+
+    // Add or update current snapshot (bucket by 15-min intervals)
+    const bucketTime = Math.floor(now / (15 * 60 * 1000)) * (15 * 60 * 1000);
+    let current = snaps.find((s) => s.timestamp === bucketTime);
+    if (!current) {
+      current = { address: addr, timestamp: bucketTime, netFlowEth: 0, txCount: 0 };
+      snaps.push(current);
+    }
+
+    current.netFlowEth += direction === "in" ? valueEth : -valueEth;
+    current.txCount++;
+  }
+
+  /**
+   * Analyze flow patterns for a watched address.
+   * Returns signal if a pattern is detected, null otherwise.
+   */
+  analyze(address: string, label: string | null): FlowAlert | null {
+    const addr = address.toLowerCase();
+    const snaps = this.snapshots.get(addr);
+    if (!snaps || snaps.length < 3) return null;
+
+    // Sort chronologically
+    const sorted = [...snaps].sort((a, b) => a.timestamp - b.timestamp);
+    const recent = sorted.slice(-6); // Last ~90 min of 15-min buckets
+
+    if (recent.length < 3) return null;
+
+    // Check for consistent direction (3+ consecutive same-sign flows)
+    const lastThree = recent.slice(-3);
+    const allPositive = lastThree.every((s) => s.netFlowEth > 0);
+    const allNegative = lastThree.every((s) => s.netFlowEth < 0);
+
+    if (!allPositive && !allNegative) return null;
+
+    const totalFlow = lastThree.reduce((s, snap) => s + snap.netFlowEth, 0);
+    const totalTxs = lastThree.reduce((s, snap) => s + snap.txCount, 0);
+    const flowDirection = totalFlow > 0 ? "accumulating" : "distributing";
+
+    // Check for acceleration (increasing volume)
+    const volumes = lastThree.map((s) => Math.abs(s.netFlowEth));
+    const isAccelerating = volumes[2] > volumes[1] && volumes[1] > volumes[0];
+
+    // Check for reversal (previous direction was opposite)
+    let signal: FlowSignal;
+    let context: string;
+
+    if (recent.length >= 4) {
+      const priorFlow = recent.slice(-4, -3)[0].netFlowEth;
+      const currentDirection = totalFlow > 0;
+      const priorDirection = priorFlow > 0;
+      if (currentDirection !== priorDirection) {
+        signal = "FLOW_REVERSAL";
+        context = `Flow reversed to ${flowDirection}. Net: ${totalFlow > 0 ? "+" : ""}${totalFlow.toFixed(4)} ETH over ${totalTxs} txs`;
+        return { address: addr, label, signal, context };
+      }
+    }
+
+    if (isAccelerating) {
+      signal = "FLOW_ACCELERATION";
+      context = `${flowDirection} with increasing volume. Net: ${totalFlow > 0 ? "+" : ""}${totalFlow.toFixed(4)} ETH over ${totalTxs} txs`;
+    } else if (allPositive) {
+      signal = "ACCUMULATION";
+      context = `Steady accumulation. Net: +${totalFlow.toFixed(4)} ETH over ${totalTxs} txs in last ~45min`;
+    } else {
+      signal = "DISTRIBUTION";
+      context = `Steady distribution. Net: ${totalFlow.toFixed(4)} ETH over ${totalTxs} txs in last ~45min`;
+    }
+
+    return { address: addr, label, signal, context };
+  }
+
+  /**
+   * Get summary for a watched address (for enriching alerts).
+   */
+  getSummary(address: string): string | null {
+    const addr = address.toLowerCase();
+    const snaps = this.snapshots.get(addr);
+    if (!snaps || snaps.length === 0) return null;
+
+    const totalFlow = snaps.reduce((s, snap) => s + snap.netFlowEth, 0);
+    const totalTxs = snaps.reduce((s, snap) => s + snap.txCount, 0);
+    const hours = snaps.length > 1
+      ? ((snaps[snaps.length - 1].timestamp - snaps[0].timestamp) / (1000 * 60 * 60)).toFixed(1)
+      : "0";
+
+    const direction = totalFlow > 0 ? "accumulating" : totalFlow < 0 ? "distributing" : "neutral";
+    return `This wallet has been ${direction} for ${hours}h (net ${totalFlow > 0 ? "+" : ""}${totalFlow.toFixed(4)} ETH, ${totalTxs} txs)`;
+  }
+}
+
+export { FlowTracker, type FlowSignal, type FlowAlert };
 
 // ─── Whale Watch Skill (User Interface) ───────────────────────────────
 
