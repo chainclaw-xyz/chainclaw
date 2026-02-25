@@ -17,7 +17,7 @@ export { createYieldFinderSkill, scorePool } from "./yield-finder.js";
 export type { YieldScore } from "./yield-finder.js";
 export { LimitOrderManager, createLimitOrderSkill } from "./limit-order.js";
 export { WhaleWatchEngine, createWhaleWatchSkill, FlowTracker } from "./whale-watch.js";
-export type { WhaleNotifier, FlowSignal, FlowAlert } from "./whale-watch.js";
+export type { WhaleNotifier, WhaleWatchDeps, FlowSignal, FlowAlert } from "./whale-watch.js";
 export { SnipeManager, createSnipeSkill } from "./snipe.js";
 export { createAirdropTrackerSkill } from "./airdrop-tracker.js";
 export { createRebalanceSkill } from "./rebalance.js";
