@@ -1,9 +1,11 @@
 import { z } from "zod";
 import type Database from "better-sqlite3";
-import { type Address } from "viem";
+import { parseEther, type Address, type Hex } from "viem";
 import { getLogger, fetchWithRetry, type SkillResult } from "@chainclaw/core";
-import type { RiskEngine } from "@chainclaw/pipeline";
+import type { RiskEngine, TransactionExecutor } from "@chainclaw/pipeline";
+import type { WalletManager } from "@chainclaw/wallet";
 import type { SkillDefinition, SkillExecutionContext } from "./types.js";
+import { getEthPriceUsd } from "./prices.js";
 
 const logger = getLogger("skill-snipe");
 
@@ -47,6 +49,16 @@ const CHAIN_NAMES: Record<number, string> = {
   8453: "base",
   42161: "arbitrum",
   10: "optimism",
+  137: "polygon",
+  56: "bsc",
+  43114: "avalanche",
+  324: "zksync",
+  534352: "scroll",
+  81457: "blast",
+  100: "gnosis",
+  59144: "linea",
+  250: "fantom",
+  5000: "mantle",
 };
 
 // Safety thresholds
@@ -122,11 +134,14 @@ export class SnipeManager {
 export function createSnipeSkill(
   snipeManager: SnipeManager,
   riskEngine: RiskEngine,
+  executor?: TransactionExecutor,
+  walletManager?: WalletManager,
+  oneInchApiKey?: string,
 ): SkillDefinition {
   return {
     name: "snipe",
     description:
-      "Analyze and prepare to snipe a token with safety checks. Runs honeypot detection, " +
+      "Snipe a token with safety checks and optional auto-execution. Runs honeypot detection, " +
       "liquidity analysis, and tax checks before any buy. Example: 'Snipe 0x... on Base with 0.1 ETH'.",
     parameters: snipeParams,
 
@@ -135,7 +150,7 @@ export function createSnipeSkill(
 
       switch (parsed.action) {
         case "snipe":
-          return handleSnipe(snipeManager, riskEngine, parsed, context);
+          return handleSnipe(snipeManager, riskEngine, parsed, context, executor, walletManager, oneInchApiKey);
         case "list":
           return handleList(snipeManager, context);
         case "cancel":
@@ -150,6 +165,9 @@ async function handleSnipe(
   riskEngine: RiskEngine,
   parsed: z.infer<typeof snipeParams>,
   context: SkillExecutionContext,
+  executor?: TransactionExecutor,
+  walletManager?: WalletManager,
+  oneInchApiKey?: string,
 ): Promise<SkillResult> {
   if (!parsed.token) {
     return {
@@ -176,7 +194,7 @@ async function handleSnipe(
   if (!chainName) {
     return {
       success: false,
-      message: `Chain ${chainId} is not supported for sniping. Supported: Ethereum, Base, Arbitrum, Optimism.`,
+      message: `Chain ${chainId} is not supported for sniping. Supported: ${Object.values(CHAIN_NAMES).join(", ")}.`,
     };
   }
 
@@ -315,6 +333,71 @@ async function handleSnipe(
 
   snipeManager.updateStatus(snipeId, "safe", "passed");
 
+  // Try to execute the swap automatically if executor is available
+  if (executor && walletManager) {
+    const quote = await getSnipeQuote(
+      chainId,
+      tokenAddress,
+      parsed.amount,
+      context.walletAddress as Address,
+      parsed.maxSlippage,
+      oneInchApiKey,
+    );
+
+    if (quote?.tx) {
+      await context.sendReply(
+        lines.join("\n") + `\n\n_Executing snipe #${snipeId}..._`,
+      );
+
+      const signer = walletManager.getSigner(context.walletAddress);
+      const ethPrice = await getEthPriceUsd();
+
+      const result = await executor.execute(
+        {
+          chainId,
+          from: context.walletAddress as Address,
+          to: quote.tx.to as Address,
+          value: BigInt(quote.tx.value),
+          data: quote.tx.data as Hex,
+          gasLimit: BigInt(quote.tx.gas),
+        },
+        signer,
+        {
+          userId: context.userId,
+          skillName: "snipe",
+          intentDescription: `Snipe ${parsed.amount} ETH → ${shortenAddress(tokenAddress)}`,
+          ethPriceUsd: ethPrice,
+        },
+        {
+          onBroadcast: async (hash) => {
+            await context.sendReply(`Snipe #${snipeId} broadcast: \`${hash}\``);
+          },
+          onConfirmed: async (_hash, blockNumber) => {
+            snipeManager.updateStatus(snipeId, "executed");
+            await context.sendReply(
+              `Snipe #${snipeId} confirmed in block ${blockNumber}!`,
+            );
+          },
+          onFailed: async (error) => {
+            snipeManager.updateStatus(snipeId, "failed", String(error));
+            await context.sendReply(`Snipe #${snipeId} failed: ${error}`);
+          },
+        },
+      );
+
+      if (!result.success) {
+        snipeManager.updateStatus(snipeId, "failed", result.message);
+      }
+
+      return {
+        success: result.success,
+        message: result.message,
+        data: { snipeId, hash: result.hash },
+      };
+    }
+  }
+
+  // Fallback: no executor or no API key — tell user to swap manually
   lines.push(
     `\n_To execute the swap, use: "Swap ${parsed.amount} ETH for ${tokenAddress} on ${chainName}"_\n` +
     `_Snipe #${snipeId} is ready._`,
@@ -368,6 +451,59 @@ function handleCancel(
   }
 
   return { success: true, message: `*Snipe #${parsed.snipeId} cancelled.*` };
+}
+
+interface SnipeQuoteResponse {
+  toAmount: string;
+  tx?: {
+    to: string;
+    data: string;
+    value: string;
+    gas: number;
+  };
+}
+
+async function getSnipeQuote(
+  chainId: number,
+  tokenAddress: string,
+  amount: string,
+  walletAddress: Address,
+  slippagePercent: number,
+  apiKey?: string,
+): Promise<SnipeQuoteResponse | null> {
+  const amountWei = parseEther(amount).toString();
+
+  try {
+    const params = new URLSearchParams({
+      src: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+      dst: tokenAddress,
+      amount: amountWei,
+      from: walletAddress,
+      slippage: String(slippagePercent),
+      disableEstimate: "true",
+    });
+
+    const endpoint = apiKey ? "swap" : "quote";
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (apiKey) {
+      headers["Authorization"] = `Bearer ${apiKey}`;
+    }
+
+    const response = await fetchWithRetry(
+      `https://api.1inch.dev/swap/v6.0/${chainId}/${endpoint}?${params.toString()}`,
+      { headers },
+    );
+
+    if (!response.ok) {
+      logger.warn({ status: response.status, chainId, endpoint }, "1inch API error during snipe");
+      return null;
+    }
+
+    return (await response.json()) as SnipeQuoteResponse;
+  } catch (err) {
+    logger.error({ err }, "Failed to get snipe quote");
+    return null;
+  }
 }
 
 async function fetchDexScreenerPair(

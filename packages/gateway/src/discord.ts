@@ -18,6 +18,7 @@ import type { ChannelContext } from "./types.js";
 import type { ChannelAdapter, ChannelStatus, AlertNotifier } from "./channel-adapter.js";
 import { CommandRouter } from "./router.js";
 import { RateLimiter } from "./rate-limiter.js";
+import { formatMessage } from "./formatter.js";
 
 const logger = getLogger("discord");
 
@@ -73,11 +74,12 @@ function makeDiscordContext(
     userId,
     channelId,
     platform: "discord",
-    sendReply: sendFn,
+    sendReply: async (text: string) => sendFn(formatMessage(text, "discord")),
     requestConfirmation: async (prompt: string) => {
       const channel = interaction.channel;
       if (!channel || !("send" in channel)) return false;
 
+      const formatted = formatMessage(prompt, "discord");
       const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder()
           .setCustomId("confirm_yes")
@@ -89,7 +91,7 @@ function makeDiscordContext(
           .setStyle(ButtonStyle.Danger),
       );
 
-      const msg = await channel.send({ content: prompt, components: [row] });
+      const msg = await channel.send({ content: formatted, components: [row] });
 
       try {
         const response = await msg.awaitMessageComponent({
@@ -99,13 +101,13 @@ function makeDiscordContext(
         });
 
         await response.update({
-          content: prompt + `\n\n_${response.customId === "confirm_yes" ? "Confirmed" : "Cancelled"} by user_`,
+          content: formatted + `\n\n_${response.customId === "confirm_yes" ? "Confirmed" : "Cancelled"} by user_`,
           components: [],
         });
 
         return response.customId === "confirm_yes";
       } catch {
-        await msg.edit({ content: prompt + "\n\n_Confirmation timed out_", components: [] });
+        await msg.edit({ content: formatted + "\n\n_Confirmation timed out_", components: [] });
         return false;
       }
     },
@@ -123,9 +125,10 @@ function makeMessageContext(
     channelId,
     platform: "discord",
     sendReply: async (text: string) => {
-      await message.reply(text);
+      await message.reply(formatMessage(text, "discord"));
     },
     requestConfirmation: async (prompt: string) => {
+      const formatted = formatMessage(prompt, "discord");
       const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder()
           .setCustomId("confirm_yes")
@@ -137,7 +140,7 @@ function makeMessageContext(
           .setStyle(ButtonStyle.Danger),
       );
 
-      const msg = await message.reply({ content: prompt, components: [row] });
+      const msg = await message.reply({ content: formatted, components: [row] });
 
       try {
         const response = await msg.awaitMessageComponent({
@@ -147,13 +150,13 @@ function makeMessageContext(
         });
 
         await response.update({
-          content: prompt + `\n\n_${response.customId === "confirm_yes" ? "Confirmed" : "Cancelled"} by user_`,
+          content: formatted + `\n\n_${response.customId === "confirm_yes" ? "Confirmed" : "Cancelled"} by user_`,
           components: [],
         });
 
         return response.customId === "confirm_yes";
       } catch {
-        await msg.edit({ content: prompt + "\n\n_Confirmation timed out_", components: [] });
+        await msg.edit({ content: formatted + "\n\n_Confirmation timed out_", components: [] });
         return false;
       }
     },
@@ -368,7 +371,7 @@ export class DiscordAdapter implements ChannelAdapter {
     }
 
     const user = await this.client.users.fetch(userId);
-    await user.send(message);
+    await user.send(formatMessage(message, "discord"));
   }
 }
 
