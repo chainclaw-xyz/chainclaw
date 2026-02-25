@@ -2,7 +2,7 @@ import { z } from "zod";
 import { getLogger, type SkillResult } from "@chainclaw/core";
 import { ChainManager } from "@chainclaw/chains";
 import { createPublicClient, http, type PublicClient } from "viem";
-import { mainnet, base, arbitrum, optimism } from "viem/chains";
+import { mainnet, base, arbitrum, optimism, polygon, bsc, avalanche, zkSync, scroll, blast, gnosis, linea, fantom, mantle } from "viem/chains";
 import type { SkillDefinition, SkillExecutionContext } from "./types.js";
 
 const logger = getLogger("skill-airdrop-tracker");
@@ -32,6 +32,16 @@ const CHAIN_NAMES: Record<number, string> = {
   8453: "Base",
   42161: "Arbitrum",
   10: "Optimism",
+  137: "Polygon",
+  56: "BNB Chain",
+  43114: "Avalanche",
+  324: "zkSync Era",
+  534352: "Scroll",
+  81457: "Blast",
+  100: "Gnosis",
+  59144: "Linea",
+  250: "Fantom",
+  5000: "Mantle",
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -40,9 +50,19 @@ const VIEM_CHAINS: Record<number, any> = {
   8453: base,
   42161: arbitrum,
   10: optimism,
+  137: polygon,
+  56: bsc,
+  43114: avalanche,
+  324: zkSync,
+  534352: scroll,
+  81457: blast,
+  100: gnosis,
+  59144: linea,
+  250: fantom,
+  5000: mantle,
 };
 
-const SUPPORTED_CHAINS = [1, 8453, 42161, 10];
+const SUPPORTED_CHAINS = [1, 8453, 42161, 10, 137, 56, 43114, 324, 534352, 81457, 100, 59144, 250, 5000];
 
 export function createAirdropTrackerSkill(
   chainManager: ChainManager,

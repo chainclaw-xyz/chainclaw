@@ -29,7 +29,7 @@ describe("createChainAdapter", () => {
 
   it("creates adapter for supported chain IDs", { timeout: 15000 }, async () => {
     const { createChainAdapter } = await import("../adapter.js");
-    for (const chainId of [1, 8453, 42161, 10]) {
+    for (const chainId of [1, 8453, 42161, 10, 137, 56, 43114, 324, 534352, 81457, 100, 59144, 250, 5000]) {
       const adapter = createChainAdapter(chainId);
       expect(adapter.chainId).toBe(chainId);
     }

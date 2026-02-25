@@ -131,6 +131,16 @@ export function createTestHarness(options: HarnessOptions = {}): TestHarness {
     baseRpcUrl: "https://base.test.local",
     arbitrumRpcUrl: "https://arb.test.local",
     optimismRpcUrl: "https://op.test.local",
+    polygonRpcUrl: "https://polygon.test.local",
+    bscRpcUrl: "https://bsc.test.local",
+    avalancheRpcUrl: "https://avax.test.local",
+    zkSyncRpcUrl: "https://zksync.test.local",
+    scrollRpcUrl: "https://scroll.test.local",
+    blastRpcUrl: "https://blast.test.local",
+    gnosisRpcUrl: "https://gnosis.test.local",
+    lineaRpcUrl: "https://linea.test.local",
+    fantomRpcUrl: "https://fantom.test.local",
+    mantleRpcUrl: "https://mantle.test.local",
     solanaRpcUrl: undefined,
   } as any;
   const chainManager = new ChainManager(fakeConfig);
@@ -141,6 +151,16 @@ export function createTestHarness(options: HarnessOptions = {}): TestHarness {
     8453: "https://base.test.local",
     42161: "https://arb.test.local",
     10: "https://op.test.local",
+    137: "https://polygon.test.local",
+    56: "https://bsc.test.local",
+    43114: "https://avax.test.local",
+    324: "https://zksync.test.local",
+    534352: "https://scroll.test.local",
+    81457: "https://blast.test.local",
+    100: "https://gnosis.test.local",
+    59144: "https://linea.test.local",
+    250: "https://fantom.test.local",
+    5000: "https://mantle.test.local",
   };
   const executor = new TransactionExecutor(
     db,

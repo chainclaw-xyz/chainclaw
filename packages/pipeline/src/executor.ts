@@ -6,7 +6,7 @@ import {
   type Hash,
   type Chain,
 } from "viem";
-import { mainnet, base, arbitrum, optimism } from "viem/chains";
+import { mainnet, base, arbitrum, optimism, polygon, bsc, avalanche, zkSync, scroll, blast, gnosis, linea, fantom, mantle } from "viem/chains";
 import type { Signer } from "@chainclaw/wallet";
 import type Database from "better-sqlite3";
 import type { TransactionRequest, SimulationResult, GuardrailCheck } from "./types.js";
@@ -20,7 +20,7 @@ import { GasOptimizer } from "./gas.js";
 
 const logger = getLogger("executor");
 
-const viemChains: Record<number, Chain> = { 1: mainnet, 8453: base, 42161: arbitrum, 10: optimism };
+const viemChains: Record<number, Chain> = { 1: mainnet, 8453: base, 42161: arbitrum, 10: optimism, 137: polygon, 56: bsc, 43114: avalanche, 324: zkSync, 534352: scroll, 81457: blast, 100: gnosis, 59144: linea, 250: fantom, 5000: mantle };
 
 export interface ExecutionCallbacks {
   onSimulated?: (result: SimulationResult, preview: string) => Promise<void>;

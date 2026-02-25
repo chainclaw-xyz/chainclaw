@@ -11,7 +11,7 @@ import {
   type Hex,
   type Chain,
 } from "viem";
-import { mainnet, base, arbitrum, optimism } from "viem/chains";
+import { mainnet, base, arbitrum, optimism, polygon, bsc, avalanche, gnosis } from "viem/chains";
 import { getLogger, type SkillResult } from "@chainclaw/core";
 import type { TransactionExecutor } from "@chainclaw/pipeline";
 import type { WalletManager, Signer } from "@chainclaw/wallet";
@@ -34,6 +34,10 @@ const AAVE_POOL: Record<number, Address> = {
   8453: "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5",
   42161: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
   10: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+  137: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+  56: "0x6807dc923806fE8Fd134338EABCA509979a7e0cB",
+  43114: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
+  100: "0xb50201558B00496A145fE76f7424749556E326D8",
 };
 
 // Aave-supported tokens per chain
@@ -60,6 +64,31 @@ const AAVE_TOKENS: Record<number, Record<string, { address: Address; decimals: n
     WETH: { address: "0x4200000000000000000000000000000000000006", decimals: 18 },
     DAI: { address: "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1", decimals: 18 },
   },
+  137: {
+    USDC: { address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", decimals: 6 },
+    USDT: { address: "0xc2132D05D31c914a87C6611C10748AEb04B58e8F", decimals: 6 },
+    WETH: { address: "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619", decimals: 18 },
+    DAI: { address: "0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063", decimals: 18 },
+    WMATIC: { address: "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270", decimals: 18 },
+  },
+  56: {
+    USDC: { address: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d", decimals: 18 },
+    USDT: { address: "0x55d398326f99059fF775485246999027B3197955", decimals: 18 },
+    DAI: { address: "0x1AF3F329e8BE154074D8769D1FFa4eE058B1DBc3", decimals: 18 },
+  },
+  43114: {
+    USDC: { address: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E", decimals: 6 },
+    USDT: { address: "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7", decimals: 6 },
+    WETH: { address: "0x49D5c2BdFfac6CE2BFdB6640F4F80f226bc10bAB", decimals: 18 },
+    DAI: { address: "0xd586E7F844cEa2F87f50152665BCbc2C279D8d70", decimals: 18 },
+    WAVAX: { address: "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7", decimals: 18 },
+  },
+  100: {
+    USDC: { address: "0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83", decimals: 6 },
+    WXDAI: { address: "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d", decimals: 18 },
+    WETH: { address: "0x6A023CCd1ff6F2045C3309768eAd9E68F978f6e1", decimals: 18 },
+    GNO: { address: "0x9C58BAcC331c9aa871AFD802DB6379a98e80CEdb", decimals: 18 },
+  },
 };
 
 const CHAIN_NAMES: Record<number, string> = {
@@ -67,6 +96,10 @@ const CHAIN_NAMES: Record<number, string> = {
   8453: "Base",
   42161: "Arbitrum",
   10: "Optimism",
+  137: "Polygon",
+  56: "BNB Chain",
+  43114: "Avalanche",
+  100: "Gnosis",
 };
 
 const viemChains: Record<number, Chain> = {
@@ -74,6 +107,10 @@ const viemChains: Record<number, Chain> = {
   8453: base,
   42161: arbitrum,
   10: optimism,
+  137: polygon,
+  56: bsc,
+  43114: avalanche,
+  100: gnosis,
 };
 
 // Minimal Aave V3 Pool ABI

@@ -124,6 +124,16 @@ async function main(): Promise<void> {
     8453: config.baseRpcUrl,
     42161: config.arbitrumRpcUrl,
     10: config.optimismRpcUrl,
+    137: config.polygonRpcUrl,
+    56: config.bscRpcUrl,
+    43114: config.avalancheRpcUrl,
+    324: config.zkSyncRpcUrl,
+    534352: config.scrollRpcUrl,
+    81457: config.blastRpcUrl,
+    100: config.gnosisRpcUrl,
+    59144: config.lineaRpcUrl,
+    250: config.fantomRpcUrl,
+    5000: config.mantleRpcUrl,
   };
 
   const executor = new TransactionExecutor(
