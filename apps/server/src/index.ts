@@ -352,24 +352,19 @@ async function main(): Promise<void> {
   // ─── Register and start channels ──────────────────────────
   const channelRegistry = new ChannelRegistry();
 
+  // Collect notification-capable adapters for multi-channel alert routing
+  const notifyAdapters: Array<{ id: string; notify: (userId: string, message: string) => Promise<void> }> = [];
+
   if (config.telegramBotToken) {
     const telegram = new TelegramAdapter(config.telegramBotToken);
-    // Wire alert notifications through delivery queue for persistence
-    alertEngine.setNotifier(async (userId, message) => {
-      const id = deliveryQueue.enqueue({ channel: "telegram", recipientId: userId, message });
-      try {
-        await telegram.notify(userId, message);
-        deliveryQueue.ack(id);
-      } catch (err) {
-        deliveryQueue.fail(id, err instanceof Error ? err.message : "Unknown error");
-        logger.warn({ err, userId, deliveryId: id }, "Alert delivery failed, queued for retry");
-      }
-    });
+    notifyAdapters.push(telegram);
     channelRegistry.register(telegram);
   }
 
   if (config.discordBotToken && config.discordClientId) {
-    channelRegistry.register(new DiscordAdapter(config.discordBotToken, config.discordClientId));
+    const discord = new DiscordAdapter(config.discordBotToken, config.discordClientId);
+    notifyAdapters.push(discord);
+    channelRegistry.register(discord);
   }
 
   if (config.slackBotToken && config.slackAppToken) {
@@ -385,6 +380,23 @@ async function main(): Promise<void> {
   }
 
   const startedChannels = await channelRegistry.startAll(gatewayDeps);
+
+  // Multi-channel alert routing: try each notification-capable adapter, stop at first success
+  if (notifyAdapters.length > 0) {
+    alertEngine.setNotifier(async (userId, message) => {
+      for (const adapter of notifyAdapters) {
+        const id = deliveryQueue.enqueue({ channel: adapter.id, recipientId: userId, message });
+        try {
+          await adapter.notify(userId, message);
+          deliveryQueue.ack(id);
+          return; // delivered successfully
+        } catch (err) {
+          deliveryQueue.fail(id, err instanceof Error ? err.message : "Unknown error");
+        }
+      }
+      logger.warn({ userId }, "Alert notification failed on all channels");
+    });
+  }
 
   alertEngine.start();
 
