@@ -52,6 +52,7 @@ export interface TransactionRecord {
   guardrailChecks?: string; // JSON
   gasUsed?: string;
   gasPrice?: string;
+  gasCostUsd?: number;
   blockNumber?: number;
   error?: string;
   createdAt: string;

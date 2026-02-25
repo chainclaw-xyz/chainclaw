@@ -41,6 +41,7 @@ export class Guardrails {
         guardrail_checks TEXT,
         gas_used TEXT,
         gas_price TEXT,
+        gas_cost_usd REAL,
         block_number INTEGER,
         error TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
