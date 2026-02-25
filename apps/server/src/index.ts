@@ -174,7 +174,7 @@ async function main(): Promise<void> {
   const whaleWatchEngine = new WhaleWatchEngine(db, rpcOverrides);
   skillRegistry.register(createWhaleWatchSkill(whaleWatchEngine));
   const snipeManager = new SnipeManager(db);
-  skillRegistry.register(createSnipeSkill(snipeManager, executor.getRiskEngine()));
+  skillRegistry.register(createSnipeSkill(snipeManager, executor.getRiskEngine(), executor, walletManager, config.oneInchApiKey));
   skillRegistry.register(createAirdropTrackerSkill(chainManager, rpcOverrides));
 
   // ─── Agent SDK (backtest + live agents) ─────────────────────

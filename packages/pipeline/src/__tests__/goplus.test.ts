@@ -158,6 +158,208 @@ describe("GoPlusClient", () => {
     expect(report).toBeNull();
   });
 
+  it("supports all 14 EVM chains", async () => {
+    for (const chainId of [1, 8453, 42161, 10, 137, 56, 43114, 324, 534352, 81457, 100, 59144, 250, 5000]) {
+      fetchSpy.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          code: 1,
+          result: {
+            "0xtoken": {
+              token_name: "Test",
+              token_symbol: "TEST",
+              is_honeypot: "0",
+              is_open_source: "1",
+              holder_count: "1000",
+            },
+          },
+        }),
+      });
+      const report = await client.getTokenSecurity(chainId, "0xtoken" as Address);
+      expect(report).not.toBeNull();
+    }
+  });
+
+  it("detects unlocked liquidity (high severity when < 20%)", async () => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        code: 1,
+        result: {
+          "0xlp": {
+            token_name: "LP Token",
+            token_symbol: "LPT",
+            is_honeypot: "0",
+            is_open_source: "1",
+            is_mintable: "0",
+            can_take_back_ownership: "0",
+            owner_change_balance: "0",
+            is_blacklisted: "0",
+            trading_cooldown: "0",
+            buy_tax: "0",
+            sell_tax: "0",
+            holder_count: "500",
+            holders: [],
+            lp_holder_count: "10",
+            lp_holders: [
+              { address: "0xlp1", percent: "0.5", is_locked: 0, is_contract: 1 },
+              { address: "0xlp2", percent: "0.3", is_locked: 0, is_contract: 1 },
+              { address: "0xlp3", percent: "0.1", is_locked: 1, is_contract: 1 },
+              { address: "0xlp4", percent: "0.1", is_locked: 0, is_contract: 1 },
+            ],
+          },
+        },
+      }),
+    });
+
+    const report = await client.getTokenSecurity(1, "0xlp" as Address);
+    expect(report).toBeDefined();
+    const lpDim = report!.dimensions.find((d) => d.name === "unlocked_liquidity");
+    expect(lpDim).toBeDefined();
+    expect(lpDim!.severity).toBe("high");
+    expect(lpDim!.score).toBe(70);
+  });
+
+  it("detects unlocked liquidity (medium severity when 20-80%)", async () => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        code: 1,
+        result: {
+          "0xlp2": {
+            token_name: "Medium LP",
+            token_symbol: "MLP",
+            is_honeypot: "0",
+            is_open_source: "1",
+            is_mintable: "0",
+            can_take_back_ownership: "0",
+            owner_change_balance: "0",
+            is_blacklisted: "0",
+            trading_cooldown: "0",
+            buy_tax: "0",
+            sell_tax: "0",
+            holder_count: "500",
+            holders: [],
+            lp_holder_count: "10",
+            lp_holders: [
+              { address: "0xlp1", percent: "0.5", is_locked: 1, is_contract: 1 },
+              { address: "0xlp2", percent: "0.5", is_locked: 0, is_contract: 1 },
+            ],
+          },
+        },
+      }),
+    });
+
+    const report = await client.getTokenSecurity(1, "0xlp2" as Address);
+    expect(report).toBeDefined();
+    const lpDim = report!.dimensions.find((d) => d.name === "unlocked_liquidity");
+    expect(lpDim).toBeDefined();
+    expect(lpDim!.severity).toBe("medium");
+    expect(lpDim!.score).toBe(40);
+  });
+
+  it("no unlocked_liquidity dimension when > 80% locked", async () => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        code: 1,
+        result: {
+          "0xlp3": {
+            token_name: "Locked LP",
+            token_symbol: "LOCK",
+            is_honeypot: "0",
+            is_open_source: "1",
+            is_mintable: "0",
+            can_take_back_ownership: "0",
+            owner_change_balance: "0",
+            is_blacklisted: "0",
+            trading_cooldown: "0",
+            buy_tax: "0",
+            sell_tax: "0",
+            holder_count: "500",
+            holders: [],
+            lp_holder_count: "5",
+            lp_holders: [
+              { address: "0xlp1", percent: "0.9", is_locked: 1, is_contract: 1 },
+              { address: "0xlp2", percent: "0.1", is_locked: 0, is_contract: 1 },
+            ],
+          },
+        },
+      }),
+    });
+
+    const report = await client.getTokenSecurity(1, "0xlp3" as Address);
+    expect(report).toBeDefined();
+    const lpDim = report!.dimensions.find((d) => d.name === "unlocked_liquidity");
+    expect(lpDim).toBeUndefined();
+  });
+
+  it("detects low LP holder count", async () => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        code: 1,
+        result: {
+          "0xfewlp": {
+            token_name: "Few LP",
+            token_symbol: "FEW",
+            is_honeypot: "0",
+            is_open_source: "1",
+            is_mintable: "0",
+            can_take_back_ownership: "0",
+            owner_change_balance: "0",
+            is_blacklisted: "0",
+            trading_cooldown: "0",
+            buy_tax: "0",
+            sell_tax: "0",
+            holder_count: "500",
+            holders: [],
+            lp_holder_count: "3",
+          },
+        },
+      }),
+    });
+
+    const report = await client.getTokenSecurity(1, "0xfewlp" as Address);
+    expect(report).toBeDefined();
+    const lpCountDim = report!.dimensions.find((d) => d.name === "low_lp_holders");
+    expect(lpCountDim).toBeDefined();
+    expect(lpCountDim!.severity).toBe("medium");
+    expect(lpCountDim!.score).toBe(45);
+  });
+
+  it("no low_lp_holders dimension when count >= 5", async () => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        code: 1,
+        result: {
+          "0xmanylp": {
+            token_name: "Many LP",
+            token_symbol: "MANY",
+            is_honeypot: "0",
+            is_open_source: "1",
+            is_mintable: "0",
+            can_take_back_ownership: "0",
+            owner_change_balance: "0",
+            is_blacklisted: "0",
+            trading_cooldown: "0",
+            buy_tax: "0",
+            sell_tax: "0",
+            holder_count: "500",
+            holders: [],
+            lp_holder_count: "10",
+          },
+        },
+      }),
+    });
+
+    const report = await client.getTokenSecurity(1, "0xmanylp" as Address);
+    expect(report).toBeDefined();
+    const lpCountDim = report!.dimensions.find((d) => d.name === "low_lp_holders");
+    expect(lpCountDim).toBeUndefined();
+  });
+
   it("detects whale concentration", async () => {
     fetchSpy.mockResolvedValueOnce({
       ok: true,

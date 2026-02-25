@@ -21,6 +21,14 @@ const CHAIN_ID_TO_LLAMA: Record<number, string> = {
   137: "Polygon",
   43114: "Avalanche",
   56: "BSC",
+  324: "zkSync Era",
+  534352: "Scroll",
+  81457: "Blast",
+  100: "Gnosis",
+  59144: "Linea",
+  250: "Fantom",
+  5000: "Mantle",
+  900: "Solana",
 };
 
 interface DefiLlamaPool {
@@ -93,7 +101,7 @@ export function createYieldFinderSkill(): SkillDefinition {
           } else {
             return {
               success: false,
-              message: `Chain ID ${parsed.chainId} is not supported for yield search. Supported: Ethereum, Base, Arbitrum, Optimism.`,
+              message: `Chain ID ${parsed.chainId} is not supported for yield search. Supported: ${Object.values(CHAIN_ID_TO_LLAMA).join(", ")}.`,
             };
           }
         }

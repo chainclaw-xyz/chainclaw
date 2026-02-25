@@ -357,4 +357,31 @@ describe("DiscordAdapter", () => {
     await eventHandlers["interactionCreate"](interaction);
     expect(mockHandleStart).not.toHaveBeenCalled();
   });
+
+  // ─── Formatter integration ─────────────────────────────────
+
+  it("formats Telegram markdown to Discord markdown in DM replies", async () => {
+    mockHandleMessage.mockImplementation(async (ctx: any) => {
+      await ctx.sendReply("Token *USDC* is _safe_");
+    });
+    const message = createMockMessage("check USDC");
+    await eventHandlers["messageCreate"](message);
+    expect(message.reply).toHaveBeenCalledWith("Token **USDC** is _safe_");
+  });
+
+  it("formats Telegram markdown in slash command replies", async () => {
+    mockHandleStart.mockImplementation(async (ctx: any) => {
+      await ctx.sendReply("Welcome to *ChainClaw*!");
+    });
+    const interaction = createMockInteraction("start");
+    await eventHandlers["interactionCreate"](interaction);
+    expect(interaction.followUp).toHaveBeenCalledWith("Welcome to **ChainClaw**!");
+  });
+
+  it("formats notify DM messages", async () => {
+    const mockSend = vi.fn();
+    mockUsersFetch.mockResolvedValue({ send: mockSend });
+    await adapter.notify("user-789", "*Price Alert*: ETH above $5000");
+    expect(mockSend).toHaveBeenCalledWith("**Price Alert**: ETH above $5000");
+  });
 });

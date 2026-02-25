@@ -5,7 +5,7 @@ import type { TokenSafetyReport, RiskDimension } from "./types.js";
 const logger = getLogger("goplus");
 
 // GoPlus chain IDs match standard EVM chain IDs
-const SUPPORTED_CHAINS = [1, 8453, 42161, 10, 137, 56];
+const SUPPORTED_CHAINS = [1, 8453, 42161, 10, 137, 56, 43114, 324, 534352, 81457, 100, 59144, 250, 5000];
 
 interface GoPlusTokenResponse {
   code: number;
@@ -33,6 +33,12 @@ interface GoPlusTokenResponse {
       }>;
       lp_holder_count?: string;
       lp_total_supply?: string;
+      lp_holders?: Array<{
+        address: string;
+        percent: string;
+        is_locked: number;
+        is_contract: number;
+      }>;
       total_supply?: string;
     }
   >;
@@ -222,6 +228,45 @@ export class GoPlusClient {
         severity: "medium",
         description: `Only ${holderCount} holders`,
         score: 40,
+      });
+    }
+
+    // LP lock analysis
+    const lpHolders = data.lp_holders ?? [];
+    if (lpHolders.length > 0) {
+      const totalLpPercent = lpHolders.reduce(
+        (sum, h) => sum + parseFloat(h.percent) * 100,
+        0,
+      );
+      const lockedLpPercent =
+        totalLpPercent > 0
+          ? (lpHolders
+              .filter((h) => h.is_locked === 1)
+              .reduce((sum, h) => sum + parseFloat(h.percent) * 100, 0) /
+              totalLpPercent) *
+            100
+          : 0;
+
+      if (lockedLpPercent < 80) {
+        const severity: RiskDimension["severity"] =
+          lockedLpPercent < 20 ? "high" : "medium";
+        dimensions.push({
+          name: "unlocked_liquidity",
+          severity,
+          description: `Only ${lockedLpPercent.toFixed(1)}% of LP tokens are locked`,
+          score: severity === "high" ? 70 : 40,
+        });
+      }
+    }
+
+    // Low LP holder count
+    const lpHolderCount = parseInt(data.lp_holder_count ?? "0", 10);
+    if (lpHolderCount > 0 && lpHolderCount < 5) {
+      dimensions.push({
+        name: "low_lp_holders",
+        severity: "medium",
+        description: `Only ${lpHolderCount} LP holder(s) — liquidity is concentrated`,
+        score: 45,
       });
     }
 
