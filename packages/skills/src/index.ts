@@ -23,6 +23,8 @@ export { createAirdropTrackerSkill } from "./airdrop-tracker.js";
 export { createRebalanceSkill } from "./rebalance.js";
 export { TrailingStopEngine, createTrailingStopSkill, TRAILING_STOP_PRESETS } from "./trailing-stop.js";
 export { createPerformanceReviewerSkill } from "./performance-reviewer.js";
+export { TradingSignalsEngine, createTradingSignalsSkill } from "./trading-signals.js";
+export type { SignalNotifier } from "./trading-signals.js";
 export { getTokenPrice, getEthPriceUsd } from "./prices.js";
 export { TOKEN_INFO, CHAIN_NAMES, resolveToken, getChainName, LIFI_NATIVE_TOKEN } from "./token-addresses.js";
 export type { TokenInfo } from "./token-addresses.js";
