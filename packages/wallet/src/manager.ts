@@ -160,6 +160,25 @@ export class WalletManager {
     this.saveStore();
   }
 
+  /**
+   * Returns the raw decrypted private key for the given address.
+   * Required by privacy providers that derive zk-wallets from the key.
+   */
+  getPrivateKey(address: string): `0x${string}` {
+    const stored = this.store.wallets.find(
+      (w) => w.address.toLowerCase() === address.toLowerCase(),
+    );
+    if (!stored) {
+      throw new Error(`Wallet not found: ${address}`);
+    }
+
+    const [ciphertext, authTag] = stored.encryptedKey.split(":");
+    return decrypt(
+      { ciphertext, authTag, iv: stored.iv, salt: stored.salt },
+      this.password,
+    ) as `0x${string}`;
+  }
+
   getSigner(address: string, rpcOverrides?: Record<number, string>): Signer {
     const account = this.getAccount(address);
     return new LocalSigner(account, rpcOverrides);
