@@ -23,6 +23,7 @@ const LANE_MAP: Record<string, string> = {
   "performance-reviewer": "background",
   backtest: "background",
   agent: "background",
+  "trading-signals": "query",
 };
 
 const DEFAULT_LANE = "default";

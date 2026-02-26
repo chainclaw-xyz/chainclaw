@@ -41,6 +41,8 @@ import {
   createAirdropTrackerSkill,
   createTrailingStopSkill,
   createPerformanceReviewerSkill,
+  TradingSignalsEngine,
+  createTradingSignalsSkill,
   getTokenPrice,
 } from "@chainclaw/skills";
 import { createLLMProvider, getDatabase, AgentRuntime, closeDatabase, createEmbeddingProvider } from "@chainclaw/agent";
@@ -184,6 +186,8 @@ async function main(): Promise<void> {
   skillRegistry.register(trailingStopSkill);
   trailingStopSkill.engine.startMonitoring();
   skillRegistry.register(createPerformanceReviewerSkill(db));
+  const tradingSignalsEngine = new TradingSignalsEngine(db, rpcOverrides);
+  skillRegistry.register(createTradingSignalsSkill(tradingSignalsEngine));
 
   // ─── Agent SDK (backtest + live agents) ─────────────────────
   const historicalData = new HistoricalDataProvider(db);
@@ -366,6 +370,7 @@ async function main(): Promise<void> {
   // Start background services
   dcaScheduler.start();
   whaleWatchEngine.start();
+  tradingSignalsEngine.start();
 
   // ─── Register and start channels ──────────────────────────
   const channelRegistry = new ChannelRegistry();
@@ -429,6 +434,21 @@ async function main(): Promise<void> {
       }
     }
     logger.warn({ userId }, "Whale watch notification failed on all channels");
+  });
+
+  // Wire trading signals notifier
+  tradingSignalsEngine.setNotifier(async (userId, message) => {
+    for (const adapter of notifyAdapters) {
+      const id = deliveryQueue.enqueue({ channel: adapter.id, recipientId: userId, message });
+      try {
+        await adapter.notify(userId, message);
+        deliveryQueue.ack(id);
+        return;
+      } catch (err) {
+        deliveryQueue.fail(id, err instanceof Error ? err.message : "Unknown error");
+      }
+    }
+    logger.warn({ userId }, "Trading signal notification failed on all channels");
   });
 
   alertEngine.start();
@@ -505,6 +525,7 @@ async function main(): Promise<void> {
       dcaScheduler.stop();
       trailingStopSkill.engine.stopMonitoring();
       whaleWatchEngine.stop();
+      tradingSignalsEngine.stop();
       dbMonitor.stop();
       updateChecker.stop();
       for (const h of pluginHandles) h.stop();
