@@ -43,6 +43,9 @@ import {
   createPerformanceReviewerSkill,
   TradingSignalsEngine,
   createTradingSignalsSkill,
+  PrivacyEngine,
+  createPrivacySkill,
+  RailgunProvider,
   getTokenPrice,
 } from "@chainclaw/skills";
 import { createLLMProvider, getDatabase, AgentRuntime, closeDatabase, createEmbeddingProvider } from "@chainclaw/agent";
@@ -188,6 +191,9 @@ async function main(): Promise<void> {
   skillRegistry.register(createPerformanceReviewerSkill(db));
   const tradingSignalsEngine = new TradingSignalsEngine(db, rpcOverrides);
   skillRegistry.register(createTradingSignalsSkill(tradingSignalsEngine));
+  const railgunProvider = new RailgunProvider(rpcOverrides);
+  const privacyEngine = new PrivacyEngine(db, railgunProvider);
+  skillRegistry.register(createPrivacySkill(privacyEngine, executor, walletManager));
 
   // ─── Agent SDK (backtest + live agents) ─────────────────────
   const historicalData = new HistoricalDataProvider(db);

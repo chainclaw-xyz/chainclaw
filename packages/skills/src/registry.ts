@@ -24,6 +24,7 @@ const LANE_MAP: Record<string, string> = {
   backtest: "background",
   agent: "background",
   "trading-signals": "query",
+  privacy: "tx",
 };
 
 const DEFAULT_LANE = "default";

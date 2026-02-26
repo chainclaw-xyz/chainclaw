@@ -25,6 +25,9 @@ export { TrailingStopEngine, createTrailingStopSkill, TRAILING_STOP_PRESETS } fr
 export { createPerformanceReviewerSkill } from "./performance-reviewer.js";
 export { TradingSignalsEngine, createTradingSignalsSkill } from "./trading-signals.js";
 export type { SignalNotifier } from "./trading-signals.js";
+export { PrivacyEngine, createPrivacySkill } from "./privacy.js";
+export type { PrivacyProvider, ShieldedBalance } from "./privacy-types.js";
+export { RailgunProvider } from "./providers/railgun.js";
 export { getTokenPrice, getEthPriceUsd } from "./prices.js";
 export { TOKEN_INFO, CHAIN_NAMES, resolveToken, getChainName, LIFI_NATIVE_TOKEN } from "./token-addresses.js";
 export type { TokenInfo } from "./token-addresses.js";
