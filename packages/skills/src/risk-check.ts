@@ -7,7 +7,7 @@ import type { SkillDefinition, SkillExecutionContext } from "./types.js";
 const logger = getLogger("skill-risk-check");
 
 const riskCheckParams = z.object({
-  contractAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/, "Invalid contract address"),
+  contractAddress: z.string().min(1, "Contract address is required"),
   chainId: z.number().optional().default(1),
 });
 
@@ -20,7 +20,22 @@ export function createRiskCheckSkill(riskEngine: RiskEngine): SkillDefinition {
 
     async execute(params: unknown, context: SkillExecutionContext): Promise<SkillResult> {
       const parsed = riskCheckParams.parse(params);
-      const { contractAddress, chainId } = parsed;
+      const { chainId } = parsed;
+      let contractAddress = parsed.contractAddress;
+
+      // Resolve ENS name if needed
+      if (!/^0x[a-fA-F0-9]{40}$/i.test(contractAddress)) {
+        if (!context.resolveAddress) {
+          return { success: false, message: "Invalid contract address. Provide a 0x address." };
+        }
+        try {
+          const resolved = await context.resolveAddress(contractAddress);
+          await context.sendReply(`_Resolved ${contractAddress} → \`${resolved.slice(0, 6)}...${resolved.slice(-4)}\`_`);
+          contractAddress = resolved;
+        } catch (err) {
+          return { success: false, message: `Could not resolve '${contractAddress}': ${err instanceof Error ? err.message : "Unknown error"}` };
+        }
+      }
 
       logger.info({ contractAddress, chainId }, "Running risk check");
 

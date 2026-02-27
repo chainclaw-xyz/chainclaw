@@ -49,6 +49,7 @@ export class AgentRuntime {
       chainIds: number[];
       sendReply: (text: string) => Promise<void>;
       requestConfirmation?: (prompt: string) => Promise<boolean>;
+      resolveAddress?: (nameOrAddress: string) => Promise<string>;
     },
   ): Promise<AgentResponse> {
     logger.info({ userId, message: message.substring(0, 100) }, "Processing message");
@@ -94,6 +95,7 @@ export class AgentRuntime {
       chainIds: number[];
       sendReply: (text: string) => Promise<void>;
       requestConfirmation?: (prompt: string) => Promise<boolean>;
+      resolveAddress?: (nameOrAddress: string) => Promise<string>;
     },
   ): Promise<AgentResponse> {
     // Handle clarification needed
@@ -127,6 +129,7 @@ export class AgentRuntime {
         chainIds: context.chainIds,
         sendReply: context.sendReply,
         requestConfirmation: context.requestConfirmation,
+        resolveAddress: context.resolveAddress,
         preferences: {
           defaultChainId: prefs.defaultChainId,
           slippageTolerance: prefs.slippageTolerance,

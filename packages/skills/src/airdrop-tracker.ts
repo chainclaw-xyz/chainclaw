@@ -87,7 +87,7 @@ export function createAirdropTrackerSkill(
 
     async execute(params: unknown, context: SkillExecutionContext): Promise<SkillResult> {
       const parsed = airdropTrackerParams.parse(params);
-      const address = parsed.address ?? context.walletAddress;
+      let address = parsed.address ?? context.walletAddress;
 
       if (!address) {
         return {
@@ -96,8 +96,18 @@ export function createAirdropTrackerSkill(
         };
       }
 
-      if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
-        return { success: false, message: "Invalid wallet address." };
+      // Resolve ENS name if needed
+      if (!/^0x[a-fA-F0-9]{40}$/i.test(address)) {
+        if (!context.resolveAddress) {
+          return { success: false, message: "Invalid wallet address. Please provide a valid Ethereum address (0x...) or ENS name." };
+        }
+        try {
+          const resolved = await context.resolveAddress(address);
+          await context.sendReply(`_Resolved ${address} → \`${shortenAddress(resolved)}\`_`);
+          address = resolved;
+        } catch (err) {
+          return { success: false, message: `Could not resolve '${address}': ${err instanceof Error ? err.message : "Unknown error"}` };
+        }
       }
 
       await context.sendReply(`_Analyzing airdrop eligibility for \`${shortenAddress(address)}\`..._`);

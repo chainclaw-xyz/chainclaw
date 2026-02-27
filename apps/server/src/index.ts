@@ -372,6 +372,7 @@ async function main(): Promise<void> {
         walletAddress: defaultAddr ?? null,
         chainIds: job.chainId ? [job.chainId] : chainManager.getSupportedChains(),
         sendReply: async () => { /* cron jobs don't have a reply channel */ },
+        resolveAddress: (input: string) => chainManager.resolveAddress(input),
       });
       return result.success ? { ok: true } : { ok: false, error: result.message };
     } catch (err) {

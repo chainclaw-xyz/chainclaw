@@ -17,11 +17,8 @@ const privacyParams = z.object({
   token: z.string().optional(),
   amount: z.string().optional(),
   chainId: z.number().optional().default(1),
-  // Withdraw-specific
-  recipientAddress: z
-    .string()
-    .regex(/^0x[a-fA-F0-9]{40}$/, "Must be a valid address")
-    .optional(),
+  // Withdraw-specific (accepts 0x address or ENS name)
+  recipientAddress: z.string().optional(),
   // History params
   limit: z.number().min(1).max(100).optional().default(20),
   offset: z.number().min(0).optional().default(0),
@@ -351,10 +348,24 @@ async function handleWithdraw(
   context: SkillExecutionContext,
 ): Promise<SkillResult> {
   const { token, amount, chainId } = parsed;
-  const recipientAddress = parsed.recipientAddress ?? context.walletAddress!;
+  let recipientAddress = parsed.recipientAddress ?? context.walletAddress!;
 
   if (!token || !amount) {
     return { success: false, message: "Missing required fields: token, amount" };
+  }
+
+  // Resolve ENS name if needed
+  if (!/^0x[a-fA-F0-9]{40}$/i.test(recipientAddress)) {
+    if (!context.resolveAddress) {
+      return { success: false, message: "Invalid recipient address. Provide a 0x address or ENS name." };
+    }
+    try {
+      const resolved = await context.resolveAddress(recipientAddress);
+      await context.sendReply(`_Resolved ${recipientAddress} → \`${resolved.slice(0, 6)}...${resolved.slice(-4)}\`_`);
+      recipientAddress = resolved;
+    } catch (err) {
+      return { success: false, message: `Could not resolve '${recipientAddress}': ${err instanceof Error ? err.message : "Unknown error"}` };
+    }
   }
 
   const provider = engine.getProvider();
