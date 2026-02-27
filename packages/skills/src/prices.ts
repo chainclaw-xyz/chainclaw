@@ -12,6 +12,8 @@ const COINGECKO_IDS: Record<string, string> = {
   WETH: "ethereum",
   BTC: "bitcoin",
   WBTC: "bitcoin",
+  SOL: "solana",
+  WSOL: "solana",
   USDC: "usd-coin",
   USDT: "tether",
   DAI: "dai",
@@ -20,6 +22,11 @@ const COINGECKO_IDS: Record<string, string> = {
   AAVE: "aave",
   ARB: "arbitrum",
   OP: "optimism",
+  JUP: "jupiter-exchange-solana",
+  BONK: "bonk",
+  PYTH: "pyth-network",
+  RAY: "raydium",
+  ORCA: "orca",
 };
 
 // Simple in-memory cache with TTL
@@ -75,4 +82,9 @@ export async function getTokenPrice(symbol: string): Promise<number | null> {
 export async function getEthPriceUsd(): Promise<number> {
   const price = await getTokenPrice("ETH");
   return price ?? 2500; // fallback
+}
+
+export async function getSolPriceUsd(): Promise<number> {
+  const price = await getTokenPrice("SOL");
+  return price ?? 150; // fallback
 }

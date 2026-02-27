@@ -9,3 +9,4 @@ export type {
   AllowlistAction,
   ContractListEntry,
 } from "./types.js";
+export { checkSolanaToken, type SolanaTokenSafetyReport } from "./rugcheck.js";

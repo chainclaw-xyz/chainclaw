@@ -17,6 +17,7 @@ import type { TransactionExecutor } from "@chainclaw/pipeline";
 import type { WalletManager, Signer } from "@chainclaw/wallet";
 import type { SkillDefinition, SkillExecutionContext } from "./types.js";
 import { getEthPriceUsd } from "./prices.js";
+import { getMarginFiPosition, formatPosition as formatMarginFiPosition } from "./providers/marginfi.js";
 
 const logger = getLogger("skill-lend");
 
@@ -204,6 +205,12 @@ export function createLendSkill(
       }
 
       const { action, chainId } = parsed;
+
+      // Solana: route to MarginFi
+      if (chainId === 900) {
+        return handleSolanaLend(action, parsed, context);
+      }
+
       const chainName = CHAIN_NAMES[chainId] ?? `Chain ${chainId}`;
       const poolAddress = AAVE_POOL[chainId];
 
@@ -266,6 +273,39 @@ export function createLendSkill(
           );
       }
     },
+  };
+}
+
+// ─── Solana lending (MarginFi) ───────────────────────────────────
+
+async function handleSolanaLend(
+  action: string,
+  parsed: z.infer<typeof lendParams>,
+  context: SkillExecutionContext,
+): Promise<SkillResult> {
+  if (action === "position") {
+    if (!context.walletAddress) {
+      return { success: false, message: "No wallet configured. Use /wallet create first." };
+    }
+    try {
+      const position = await getMarginFiPosition(context.walletAddress, "https://api.mainnet-beta.solana.com");
+      if (!position) {
+        return { success: true, message: "*MarginFi Position (Solana)*\n\nNo active lending position found." };
+      }
+      return { success: true, message: formatMarginFiPosition(position) };
+    } catch (err) {
+      logger.error({ err }, "Failed to fetch MarginFi position");
+      return { success: false, message: "Failed to fetch MarginFi position. RPC may be unavailable." };
+    }
+  }
+
+  // Write actions not yet supported
+  return {
+    success: false,
+    message:
+      `Solana lending (MarginFi) currently supports position queries only.\n\n` +
+      `Use: _"Check my lending position on Solana"_\n\n` +
+      `_Supply, withdraw, borrow, and repay coming soon._`,
   };
 }
 

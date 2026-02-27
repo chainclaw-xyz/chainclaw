@@ -4,6 +4,7 @@ import type { Address } from "viem";
 import { GoPlusClient } from "./goplus.js";
 import { RiskCache } from "./cache.js";
 import { ContractAuditor, type ContractAuditReport } from "./contract-audit.js";
+import { checkSolanaToken } from "./rugcheck.js";
 import type { TokenSafetyReport, RiskDimension } from "./types.js";
 
 const logger = getLogger("risk-engine");
@@ -31,22 +32,73 @@ export class RiskEngine {
 
   async analyzeToken(
     chainId: number,
-    tokenAddress: Address,
+    tokenAddress: string,
   ): Promise<TokenSafetyReport | null> {
+    // Solana: route to RugCheck
+    if (chainId === 900) {
+      return this.analyzeSolanaToken(tokenAddress);
+    }
+
     // Check cache first
-    const cached = this.cache.getCachedReport(tokenAddress, chainId);
+    const cached = this.cache.getCachedReport(tokenAddress as Address, chainId);
     if (cached) {
       logger.debug({ tokenAddress, chainId }, "Risk report from cache");
       return cached;
     }
 
     // Fetch from GoPlus
-    const report = await this.goplus.getTokenSecurity(chainId, tokenAddress);
+    const report = await this.goplus.getTokenSecurity(chainId, tokenAddress as Address);
     if (!report) return null;
 
     // Cache the result
     this.cache.cacheReport(report);
     return report;
+  }
+
+  private async analyzeSolanaToken(mint: string): Promise<TokenSafetyReport | null> {
+    try {
+      const report = await checkSolanaToken(mint);
+      if (!report) return null;
+
+      // Map RugCheck riskLevel → TokenSafetyReport riskLevel
+      const riskLevelMap: Record<string, TokenSafetyReport["riskLevel"]> = {
+        safe: "safe",
+        warning: "medium",
+        danger: "critical",
+      };
+
+      return {
+        chainId: 900,
+        address: mint as Address,
+        name: report.name,
+        symbol: report.symbol,
+        isOpenSource: true,
+        isHoneypot: report.riskLevel === "danger" && !report.hasLiquidity,
+        canTakeBackOwnership: false,
+        hasMintFunction: !report.mintAuthorityRevoked,
+        canBlacklist: !report.freezeAuthorityRevoked,
+        hasTradingCooldown: false,
+        buyTax: 0,
+        sellTax: 0,
+        holderCount: 0,
+        topHolderPercent: report.topHolderPct,
+        liquidityUsd: report.hasLiquidity ? 1 : 0,
+        overallScore: Math.min(report.score, 100),
+        riskLevel: riskLevelMap[report.riskLevel] ?? "medium",
+        dimensions: report.risks.map((riskStr, i) => ({
+          name: `risk-${i}`,
+          description: riskStr,
+          score: 50,
+          severity: riskStr.startsWith("[danger]") ? "critical" as const
+            : riskStr.startsWith("[warn]") ? "high" as const
+            : "medium" as const,
+        })),
+        cachedAt: new Date().toISOString(),
+      };
+    } catch (err) {
+      logger.error({ err, mint }, "RugCheck analysis failed");
+      return null;
+    }
   }
 
   async shouldBlock(

@@ -52,6 +52,7 @@ const CHAIN_NAMES: Record<number, string> = {
   59144: "Linea",
   250: "Fantom",
   5000: "Mantle",
+  900: "Solana",
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -676,10 +677,15 @@ function handleWatch(
     };
   }
 
-  if (!/^0x[a-fA-F0-9]{40}$/.test(parsed.address)) {
+  // Validate address format: EVM (0x...) or Solana (base58, 32-44 chars)
+  const isEvmAddress = /^0x[a-fA-F0-9]{40}$/.test(parsed.address);
+  const isSolanaAddress = parsed.chainId === 900 && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(parsed.address);
+  if (!isEvmAddress && !isSolanaAddress) {
     return {
       success: false,
-      message: "Invalid wallet address. Please provide a valid Ethereum address (0x...).",
+      message: parsed.chainId === 900
+        ? "Invalid Solana address. Please provide a valid base58 address."
+        : "Invalid wallet address. Please provide a valid Ethereum address (0x...).",
     };
   }
 

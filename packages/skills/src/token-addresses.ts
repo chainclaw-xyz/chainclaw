@@ -1,7 +1,5 @@
-import type { Address } from "viem";
-
 export interface TokenInfo {
-  address: Address;
+  address: string;
   decimals: number;
 }
 
@@ -107,6 +105,24 @@ export const TOKEN_INFO: Record<number, Record<string, TokenInfo>> = {
     WETH: { address: "0xdEAddEaDdeadDEadDEADDEAddEADDEAddead1111", decimals: 18 },
     WMNT: { address: "0x78c1b0C915c4FAA5FffA6CAbf0219DA63d7f4cb8", decimals: 18 },
   },
+  900: {
+    SOL: { address: "So11111111111111111111111111111111111111112", decimals: 9 },
+    WSOL: { address: "So11111111111111111111111111111111111111112", decimals: 9 },
+    USDC: { address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", decimals: 6 },
+    USDT: { address: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", decimals: 6 },
+    BONK: { address: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263", decimals: 5 },
+    JUP: { address: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN", decimals: 6 },
+    RAY: { address: "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R", decimals: 6 },
+    ORCA: { address: "orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE", decimals: 6 },
+    MSOL: { address: "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So", decimals: 9 },
+    JITOSOL: { address: "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn", decimals: 9 },
+    BSOL: { address: "bSo13r4TkiE4KumL71LsHTPpL2euBYLFx6h9HP3piy1", decimals: 9 },
+    PYTH: { address: "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3", decimals: 6 },
+    WIF: { address: "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm", decimals: 6 },
+    W: { address: "85VBFQZC9TZkfaptBWjvUw7YbZjy52A6mjtPGjstQAmQ", decimals: 6 },
+    RENDER: { address: "rndrizKT3MK1iimdxRdWabcF7Zg7AR5T4nud4EkHBof", decimals: 8 },
+    HNT: { address: "hntyVP6YFm1Hg25TN9WGLqM12b8TQmcknKrdu1oxWux", decimals: 8 },
+  },
 };
 
 export const CHAIN_NAMES: Record<number, string> = {
@@ -124,10 +140,11 @@ export const CHAIN_NAMES: Record<number, string> = {
   59144: "Linea",
   250: "Fantom",
   5000: "Mantle",
+  900: "Solana",
 };
 
 // Native token address used by Li.Fi (different format from 1inch)
-export const LIFI_NATIVE_TOKEN = "0x0000000000000000000000000000000000000000" as Address;
+export const LIFI_NATIVE_TOKEN = "0x0000000000000000000000000000000000000000";
 
 export function resolveToken(chainId: number, symbol: string): TokenInfo | undefined {
   return TOKEN_INFO[chainId]?.[symbol.toUpperCase()];

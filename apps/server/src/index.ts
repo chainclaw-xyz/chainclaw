@@ -49,7 +49,7 @@ import {
   getTokenPrice,
 } from "@chainclaw/skills";
 import { createLLMProvider, getDatabase, AgentRuntime, closeDatabase, createEmbeddingProvider } from "@chainclaw/agent";
-import { TransactionExecutor } from "@chainclaw/pipeline";
+import { TransactionExecutor, SolanaTransactionExecutor } from "@chainclaw/pipeline";
 import {
   HistoricalDataProvider,
   PerformanceTracker,
@@ -153,8 +153,15 @@ async function main(): Promise<void> {
     rpcOverrides,
   );
 
+  // ─── Solana executor (optional) ─────────────────────────────
+  let solanaExecutor: SolanaTransactionExecutor | undefined;
+  if (config.solanaRpcUrl) {
+    solanaExecutor = new SolanaTransactionExecutor(db, config.solanaRpcUrl);
+    logger.info("Solana transaction executor initialized");
+  }
+
   logger.info(
-    { tenderly: !!config.tenderlyApiKey, oneInchSwaps: !!config.oneInchApiKey },
+    { tenderly: !!config.tenderlyApiKey, oneInchSwaps: !!config.oneInchApiKey, solana: !!solanaExecutor },
     "Transaction pipeline initialized",
   );
 
@@ -162,11 +169,11 @@ async function main(): Promise<void> {
   const skillRegistry = new SkillRegistry();
   skillRegistry.configureLanes();
   skillRegistry.register(createBalanceSkill(chainManager));
-  skillRegistry.register(createSwapSkill(executor, walletManager, config.oneInchApiKey));
+  skillRegistry.register(createSwapSkill(executor, walletManager, config.oneInchApiKey, solanaExecutor));
   skillRegistry.register(createBridgeSkill(executor, walletManager));
   skillRegistry.register(createLendSkill(executor, walletManager, rpcOverrides));
-  const dcaScheduler = new DcaScheduler(db, executor, walletManager, config.oneInchApiKey);
-  skillRegistry.register(createDcaSkill(dcaScheduler));
+  const dcaScheduler = new DcaScheduler(db, executor, walletManager, config.oneInchApiKey, solanaExecutor);
+  skillRegistry.register(createDcaSkill(dcaScheduler, walletManager));
   const alertEngine = new AlertEngine(db);
   skillRegistry.register(createAlertSkill(alertEngine));
   skillRegistry.register(createWorkflowSkill(skillRegistry));
@@ -177,7 +184,7 @@ async function main(): Promise<void> {
   // ─── Tier 1 skills ──────────────────────────────────────────
   skillRegistry.register(createYieldFinderSkill());
   const limitOrderManager = new LimitOrderManager(db);
-  skillRegistry.register(createLimitOrderSkill(limitOrderManager, walletManager));
+  skillRegistry.register(createLimitOrderSkill(limitOrderManager, walletManager, solanaExecutor));
   const whaleWatchEngine = new WhaleWatchEngine(db, rpcOverrides, {
     executor, walletManager, riskEngine: executor.getRiskEngine(), oneInchApiKey: config.oneInchApiKey,
   });

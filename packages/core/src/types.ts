@@ -20,6 +20,7 @@ export interface WalletInfo {
   label: string;
   isDefault: boolean;
   createdAt: string;
+  chainType?: "evm" | "solana";
 }
 
 export interface WalletStore {
@@ -34,6 +35,7 @@ export interface StoredWallet {
   iv: string;
   salt: string;
   createdAt: string;
+  chainType?: "evm" | "solana";
 }
 
 // ─── Token Types ────────────────────────────────────────────

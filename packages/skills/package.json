@@ -19,6 +19,7 @@
     "@chainclaw/core": "*",
     "@chainclaw/pipeline": "*",
     "@chainclaw/wallet": "*",
+    "@solana/web3.js": "^1.98.4",
     "better-sqlite3": "^11.10.0",
     "viem": "^2.23.2",
     "zod": "^3.24.2"

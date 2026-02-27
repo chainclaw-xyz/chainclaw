@@ -76,6 +76,7 @@ const CHAIN_NAMES: Record<number, string> = {
   59144: "linea",
   250: "fantom",
   5000: "mantle",
+  900: "solana",
 };
 
 // Safety thresholds

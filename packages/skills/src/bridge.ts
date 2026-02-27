@@ -59,6 +59,14 @@ interface ParsedRoute {
   toDecimals: number;
 }
 
+// Li.Fi uses a different chain ID for Solana
+const LIFI_SOLANA_CHAIN_ID = 1151111081099710;
+
+function toLiFiChainId(chainId: number): number | string {
+  if (chainId === 900) return LIFI_SOLANA_CHAIN_ID;
+  return chainId;
+}
+
 export function createBridgeSkill(
   executor: TransactionExecutor,
   walletManager: WalletManager,
@@ -92,6 +100,15 @@ export function createBridgeSkill(
         return { success: false, message: "Source and destination chains must be different." };
       }
 
+      // Solana bridging: Li.Fi supports Solana via a different chain ID
+      const isSolanaSrc = fromChainId === 900;
+      if (isSolanaSrc) {
+        return {
+          success: false,
+          message: "Bridging _from_ Solana is not yet supported. You can bridge _to_ Solana from EVM chains.",
+        };
+      }
+
       // Resolve token addresses — use Li.Fi native token for ETH
       const fromInfo = resolveToken(fromChainId, tokenUpper);
       const toInfo = resolveToken(toChainId, tokenUpper);
@@ -111,9 +128,11 @@ export function createBridgeSkill(
         `_Finding bridge routes for ${amount} ${tokenUpper} from ${fromChainName} to ${toChainName}..._`,
       );
 
-      // Fetch all 3 routes in parallel
+      // Fetch all 3 routes in parallel (map chain IDs for Li.Fi)
+      const lifiFromChain = toLiFiChainId(fromChainId);
+      const lifiToChain = toLiFiChainId(toChainId);
       const routes = await getLiFiRoutes(
-        fromChainId, toChainId, fromTokenAddress, toTokenAddress,
+        lifiFromChain, lifiToChain, fromTokenAddress, toTokenAddress,
         amount, decimals, context.walletAddress as Address, slippageBps,
       );
 
@@ -221,10 +240,10 @@ export function createBridgeSkill(
 }
 
 async function getLiFiRoutes(
-  fromChainId: number,
-  toChainId: number,
-  fromTokenAddress: Address,
-  toTokenAddress: Address,
+  fromChainId: number | string,
+  toChainId: number | string,
+  fromTokenAddress: string,
+  toTokenAddress: string,
   amount: string,
   decimals: number,
   walletAddress: Address,
@@ -271,10 +290,10 @@ async function getLiFiRoutes(
 }
 
 async function fetchLiFiQuote(
-  fromChainId: number,
-  toChainId: number,
-  fromTokenAddress: Address,
-  toTokenAddress: Address,
+  fromChainId: number | string,
+  toChainId: number | string,
+  fromTokenAddress: string,
+  toTokenAddress: string,
   amountWei: string,
   walletAddress: Address,
   slippageBps: number,

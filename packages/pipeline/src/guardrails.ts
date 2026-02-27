@@ -148,6 +148,67 @@ export class Guardrails {
     return checks;
   }
 
+  /**
+   * Guardrail checks for Solana transactions (chain-agnostic USD values).
+   */
+  async checkSolana(userId: string, estimatedUsd: number): Promise<GuardrailCheck[]> {
+    const limits = this.getLimits(userId);
+    const checks: GuardrailCheck[] = [];
+
+    // 1. Per-transaction limit
+    checks.push({
+      passed: estimatedUsd <= limits.maxPerTx,
+      rule: "max_per_tx",
+      message:
+        estimatedUsd <= limits.maxPerTx
+          ? `Transaction value $${estimatedUsd.toFixed(2)} within limit ($${limits.maxPerTx})`
+          : `Transaction value $${estimatedUsd.toFixed(2)} exceeds per-tx limit of $${limits.maxPerTx}`,
+    });
+
+    // 2. Daily spending limit (use gas_cost_usd for Solana since value is in SOL)
+    const dailySpent = this.getDailySolanaSpending(userId);
+    const dailyTotal = dailySpent + estimatedUsd;
+
+    checks.push({
+      passed: dailyTotal <= limits.maxPerDay,
+      rule: "max_per_day",
+      message:
+        dailyTotal <= limits.maxPerDay
+          ? `Daily spending $${dailyTotal.toFixed(2)} within limit ($${limits.maxPerDay})`
+          : `Daily spending $${dailyTotal.toFixed(2)} would exceed limit of $${limits.maxPerDay}`,
+    });
+
+    // 3. Cooldown between transactions
+    const lastTx = this.lastTxTime.get(userId) ?? 0;
+    const elapsed = (Date.now() - lastTx) / 1000;
+
+    checks.push({
+      passed: elapsed >= limits.cooldownSeconds,
+      rule: "cooldown",
+      message:
+        elapsed >= limits.cooldownSeconds
+          ? "Cooldown period passed"
+          : `Please wait ${Math.ceil(limits.cooldownSeconds - elapsed)}s before next transaction`,
+    });
+
+    return checks;
+  }
+
+  private getDailySolanaSpending(userId: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COALESCE(SUM(gas_cost_usd), 0) as totalUsd
+         FROM tx_log
+         WHERE user_id = ?
+           AND chain_id = 900
+           AND status IN ('confirmed', 'broadcast')
+           AND created_at >= datetime('now', '-1 day')`,
+      )
+      .get(userId) as { totalUsd: number } | undefined;
+
+    return row?.totalUsd ?? 0;
+  }
+
   private getDailySpending(userId: string, ethPriceUsd: number): number {
     const row = this.db
       .prepare(

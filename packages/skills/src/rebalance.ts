@@ -204,7 +204,7 @@ export function createRebalanceSkill(
         const swapResult = await executeRebalanceSwap(
           executor, walletManager, context, chainId,
           fromSymbol, toSymbol, tokenAmount, fromInfo.decimals,
-          fromInfo.address, toInfo.address,
+          fromInfo.address as Address, toInfo.address as Address,
           slippageBps, oneInchApiKey,
         );
 

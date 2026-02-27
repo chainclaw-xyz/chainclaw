@@ -47,6 +47,7 @@ When the user provides information across multiple messages, combine ALL context
 - "linea" → chainId: 59144
 - "fantom", "ftm" → chainId: 250
 - "mantle", "mnt" → chainId: 5000
+- "solana", "sol chain" → chainId: 900
 
 ## Exact Parameter Schemas Per Skill
 
@@ -63,7 +64,8 @@ When the user provides information across multiple messages, combine ALL context
 **lend**: { action: "supply"|"withdraw"|"borrow"|"repay", token: string, amount: string, chainId?: number }
 
 **risk_check**: { contractAddress: string, chainId?: number }
-  - contractAddress MUST be a full 0x address (42 chars)
+  - For EVM chains: contractAddress MUST be a full 0x address (42 chars)
+  - For Solana (chainId 900): contractAddress is a base58 token mint address
   - Default chainId is 1 (Ethereum) if not specified
 
 **alert**: { token: string, condition: "above"|"below", price: number }
@@ -152,6 +154,15 @@ User: "Check my airdrop eligibility"
 User: "Am I eligible for LayerZero airdrop?"
 → action: "airdrop-tracker", params: { protocol: "LayerZero" }
 
+User: "Swap 10 USDC for SOL on Solana"
+→ action: "swap", params: { fromToken: "USDC", toToken: "SOL", amount: "10", chainId: 900 }
+
+User: "What's my balance on Solana?"
+→ action: "balance", params: { chainId: 900 }
+
+User: "Best yields on Solana"
+→ action: "yield-finder", params: { chainId: 900 }
+
 User: "Hello!"
 → action: "unknown", conversationalReply: "Hey! I'm ChainClaw, your DeFi assistant. How can I help you today?"`;
 }
@@ -175,6 +186,7 @@ export const PARSE_INTENT_TOOL = {
                 "alert", "risk_check", "dca", "portfolio", "history",
                 "backtest", "agent", "marketplace", "workflow",
                 "yield-finder", "limit-order", "whale-watch", "snipe", "airdrop-tracker",
+                "privacy", "trading-signals",
                 "help", "settings", "unknown",
               ],
               description: "The action type",

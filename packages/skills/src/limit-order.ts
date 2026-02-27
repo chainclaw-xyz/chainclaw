@@ -1,10 +1,17 @@
 import { z } from "zod";
 import type Database from "better-sqlite3";
 import { type Address } from "viem";
+import { VersionedTransaction } from "@solana/web3.js";
 import { getLogger, fetchWithRetry, type SkillResult } from "@chainclaw/core";
+import type { SolanaTransactionExecutor } from "@chainclaw/pipeline";
 import type { WalletManager } from "@chainclaw/wallet";
 import type { SkillDefinition, SkillExecutionContext } from "./types.js";
-import { getTokenPrice } from "./prices.js";
+import { getTokenPrice, getSolPriceUsd } from "./prices.js";
+import { resolveToken, getChainName } from "./token-addresses.js";
+import {
+  createJupiterLimitOrder,
+  cancelJupiterLimitOrder,
+} from "./providers/jupiter-limit.js";
 
 const logger = getLogger("skill-limit-order");
 
@@ -117,11 +124,13 @@ export class LimitOrderManager {
 export function createLimitOrderSkill(
   orderManager: LimitOrderManager,
   walletManager: WalletManager,
+  solanaExecutor?: SolanaTransactionExecutor,
 ): SkillDefinition {
   return {
     name: "limit-order",
     description:
-      "Create gasless limit orders via CoW Protocol. Set a target price and the order executes when the market reaches it. " +
+      "Create limit orders. CoW Protocol (gasless, MEV-protected) on Ethereum/Gnosis, Jupiter Trigger Orders on Solana. " +
+      "Set a target price and the order executes when the market reaches it. " +
       "Example: 'Set a limit order to buy ETH at $2000 with 500 USDC'.",
     parameters: limitOrderParams,
 
@@ -130,11 +139,11 @@ export function createLimitOrderSkill(
 
       switch (parsed.action) {
         case "create":
-          return handleCreate(orderManager, walletManager, parsed, context);
+          return handleCreate(orderManager, walletManager, solanaExecutor, parsed, context);
         case "list":
           return handleList(orderManager, context);
         case "cancel":
-          return handleCancel(orderManager, parsed, context);
+          return handleCancel(orderManager, walletManager, solanaExecutor, parsed, context);
       }
     },
   };
@@ -143,6 +152,7 @@ export function createLimitOrderSkill(
 async function handleCreate(
   orderManager: LimitOrderManager,
   walletManager: WalletManager,
+  solanaExecutor: SolanaTransactionExecutor | undefined,
   parsed: z.infer<typeof limitOrderParams>,
   context: SkillExecutionContext,
 ): Promise<SkillResult> {
@@ -157,6 +167,11 @@ async function handleCreate(
 
   if (!context.walletAddress) {
     return { success: false, message: "No wallet configured. Use /wallet to create or import one." };
+  }
+
+  // Solana: route to Jupiter Trigger Orders
+  if (chainId === 900) {
+    return handleCreateSolana(orderManager, walletManager, solanaExecutor, parsed, context);
   }
 
   const apiBase = COW_API_BASE[chainId];
@@ -333,7 +348,7 @@ function handleList(
       `*#${order.id}* Sell ${order.amount} ${order.from_token} → ${order.to_token} at $${order.limit_price.toLocaleString("en-US")}`,
     );
     lines.push(
-      `   Chain: ${order.chain_id} | Created: ${order.created_at.slice(0, 10)}`,
+      `   Chain: ${getChainName(order.chain_id)} | Created: ${order.created_at.slice(0, 10)}`,
     );
   }
 
@@ -342,6 +357,8 @@ function handleList(
 
 async function handleCancel(
   orderManager: LimitOrderManager,
+  walletManager: WalletManager,
+  solanaExecutor: SolanaTransactionExecutor | undefined,
   parsed: z.infer<typeof limitOrderParams>,
   context: SkillExecutionContext,
 ): Promise<SkillResult> {
@@ -354,15 +371,51 @@ async function handleCancel(
     return { success: false, message: `Order ${parsed.orderId} not found.` };
   }
 
-  // Try to cancel on CoW Protocol API
-  const apiBase = COW_API_BASE[order.chain_id];
-  if (apiBase && !order.order_uid.startsWith("local-")) {
-    try {
-      await fetchWithRetry(`${apiBase}/api/v1/orders/${order.order_uid}`, {
-        method: "DELETE",
-      });
-    } catch (err) {
-      logger.warn({ err, orderUid: order.order_uid }, "Failed to cancel on CoW API");
+  // Solana cancellation via Jupiter Trigger API
+  if (order.chain_id === 900) {
+    if (!solanaExecutor) {
+      return { success: false, message: "Solana executor not configured. Cannot cancel on-chain order." };
+    }
+    const solanaAddress = walletManager.getSolanaAddress();
+    if (!solanaAddress) {
+      return { success: false, message: "No Solana wallet found. Cannot cancel on-chain order." };
+    }
+
+    const cancelResponse = await cancelJupiterLimitOrder(solanaAddress, order.order_uid);
+    if (!cancelResponse) {
+      return { success: false, message: "Failed to cancel order on Jupiter. The API may be temporarily unavailable — your order is still active on-chain." };
+    }
+
+    const transactionBuf = Buffer.from(cancelResponse.transaction, "base64");
+    const transaction = VersionedTransaction.deserialize(transactionBuf);
+    const signer = walletManager.getSolanaSigner(solanaAddress);
+    const solPrice = await getSolPriceUsd();
+
+    const result = await solanaExecutor.executePrebuilt(
+      transaction,
+      signer,
+      {
+        userId: context.userId,
+        skillName: "limit-order",
+        intentDescription: `Cancel limit order ${order.order_uid.slice(0, 12)}`,
+        solPriceUsd: solPrice,
+      },
+    );
+
+    if (!result.success) {
+      return { success: false, message: `Failed to cancel on-chain: ${result.message}` };
+    }
+  } else {
+    // Try to cancel on CoW Protocol API
+    const apiBase = COW_API_BASE[order.chain_id];
+    if (apiBase && !order.order_uid.startsWith("local-")) {
+      try {
+        await fetchWithRetry(`${apiBase}/api/v1/orders/${order.order_uid}`, {
+          method: "DELETE",
+        });
+      } catch (err) {
+        logger.warn({ err, orderUid: order.order_uid }, "Failed to cancel on CoW API");
+      }
     }
   }
 
@@ -375,6 +428,146 @@ async function handleCancel(
     success: true,
     message: `*Order Cancelled*\n\nLimit order for ${order.amount} ${order.from_token} → ${order.to_token} at $${order.limit_price} has been cancelled.`,
   };
+}
+
+async function handleCreateSolana(
+  orderManager: LimitOrderManager,
+  walletManager: WalletManager,
+  solanaExecutor: SolanaTransactionExecutor | undefined,
+  parsed: z.infer<typeof limitOrderParams>,
+  context: SkillExecutionContext,
+): Promise<SkillResult> {
+  if (!solanaExecutor) {
+    return { success: false, message: "Solana executor not configured. Set SOLANA_RPC_URL to enable Solana limit orders." };
+  }
+
+  const { fromToken, toToken, amount, limitPrice } = parsed;
+  if (!fromToken || !toToken || !amount || limitPrice == null) {
+    return { success: false, message: "Missing required fields: fromToken, toToken, amount, limitPrice." };
+  }
+
+  const fromUpper = fromToken.toUpperCase();
+  const toUpper = toToken.toUpperCase();
+
+  const fromInfo = resolveToken(900, fromUpper);
+  const toInfo = resolveToken(900, toUpper);
+  if (!fromInfo) {
+    return { success: false, message: `${fromUpper} is not supported on Solana.` };
+  }
+  if (!toInfo) {
+    return { success: false, message: `${toUpper} is not supported on Solana.` };
+  }
+
+  // Get Solana wallet
+  const solanaAddress = walletManager.getSolanaAddress();
+  if (!solanaAddress) {
+    return { success: false, message: "No Solana wallet configured. Use /wallet create-solana first." };
+  }
+
+  // Calculate amounts in smallest units
+  const makingAmount = BigInt(Math.floor(Number(amount) * 10 ** fromInfo.decimals)).toString();
+
+  // Calculate takingAmount from limitPrice (same logic as calculateBuyAmount)
+  const isSellingStable = ["USDC", "USDT"].includes(fromUpper);
+  const buyAmountFloat = isSellingStable ? Number(amount) / limitPrice : Number(amount) * limitPrice;
+  const takingAmount = BigInt(Math.floor(buyAmountFloat * 10 ** toInfo.decimals)).toString();
+
+  // Expiration: 7 days
+  const expiredAt = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
+
+  // Get current price for display
+  const currentPrice = await getTokenPrice(isSellingStable ? toUpper : fromUpper);
+  const priceComparison = currentPrice
+    ? `\nCurrent price: $${currentPrice.toLocaleString("en-US", { maximumFractionDigits: 2 })}`
+    : "";
+
+  // Confirmation gate
+  if (context.requestConfirmation) {
+    const confirmed = await context.requestConfirmation(
+      `*Confirm Solana Limit Order*\n\n` +
+      `Sell: ${amount} ${fromUpper}\n` +
+      `Buy: ${toUpper} at $${limitPrice.toLocaleString("en-US")}${priceComparison}\n` +
+      `Chain: Solana\n` +
+      `Expires: 7 days\n\n` +
+      `Approve this order?`,
+    );
+    if (!confirmed) {
+      return { success: false, message: "Limit order cancelled by user." };
+    }
+  }
+
+  await context.sendReply(
+    `_Submitting limit order on Solana: Sell ${amount} ${fromUpper} for ${toUpper} at $${limitPrice.toLocaleString("en-US")}..._`,
+  );
+
+  try {
+    // Create order via Jupiter Trigger API
+    const orderResponse = await createJupiterLimitOrder({
+      inputMint: fromInfo.address,
+      outputMint: toInfo.address,
+      maker: solanaAddress,
+      makingAmount,
+      takingAmount,
+      expiredAt,
+    });
+
+    if (!orderResponse) {
+      return {
+        success: false,
+        message: "Failed to create limit order via Jupiter. The API may be temporarily unavailable or the order value is below the $5 minimum.",
+      };
+    }
+
+    // Deserialize and execute the order creation transaction
+    const transactionBuf = Buffer.from(orderResponse.transaction, "base64");
+    const transaction = VersionedTransaction.deserialize(transactionBuf);
+
+    const signer = walletManager.getSolanaSigner(solanaAddress);
+    const solPrice = await getSolPriceUsd();
+
+    const result = await solanaExecutor.executePrebuilt(
+      transaction,
+      signer,
+      {
+        userId: context.userId,
+        skillName: "limit-order",
+        intentDescription: `Limit order: sell ${amount} ${fromUpper} for ${toUpper} at $${limitPrice}`,
+        solPriceUsd: solPrice,
+      },
+    );
+
+    if (!result.success) {
+      return { success: false, message: `Failed to submit limit order: ${result.message}` };
+    }
+
+    // Save to local DB for tracking
+    const orderId = orderManager.saveOrder(
+      context.userId,
+      orderResponse.order, // Jupiter's order public key as the order_uid
+      fromUpper,
+      toUpper,
+      amount,
+      limitPrice,
+      900,
+    );
+
+    return {
+      success: true,
+      message:
+        `*Limit Order #${orderId} Submitted*\n\n` +
+        `Sell: ${amount} ${fromUpper}\n` +
+        `Buy: ${toUpper} at $${limitPrice.toLocaleString("en-US")}\n` +
+        `Expires: 7 days${priceComparison}\n` +
+        `Order: \`${orderResponse.order.slice(0, 12)}...\`\n\n` +
+        `_Powered by Jupiter Trigger Orders._`,
+    };
+  } catch (err) {
+    logger.error({ err }, "Failed to create Solana limit order");
+    return {
+      success: false,
+      message: "Failed to create limit order on Solana. Please try again later.",
+    };
+  }
 }
 
 function calculateBuyAmount(

@@ -176,7 +176,7 @@ export function createTestHarness(options: HarnessOptions = {}): TestHarness {
   skillRegistry.register(createLendSkill(executor, walletManager, rpcOverrides));
 
   const dcaScheduler = new DcaScheduler(db, executor, walletManager);
-  skillRegistry.register(createDcaSkill(dcaScheduler));
+  skillRegistry.register(createDcaSkill(dcaScheduler, walletManager));
 
   const alertEngine = new AlertEngine(db);
   skillRegistry.register(createAlertSkill(alertEngine));
