@@ -262,6 +262,7 @@ export class CommandRouter {
         walletAddress: defaultAddr,
         chainIds: chainManager.getSupportedChains(),
         sendReply: ctx.sendReply,
+        resolveAddress: (input: string) => chainManager.resolveAddress(input),
       });
       await ctx.sendReply(result.message);
     } catch (err) {
@@ -301,6 +302,7 @@ export class CommandRouter {
         chainIds: chainManager.getSupportedChains(),
         sendReply: ctx.sendReply,
         requestConfirmation: ctx.requestConfirmation,
+        resolveAddress: (input: string) => chainManager.resolveAddress(input),
       });
 
       await ctx.sendReply(response.text);

@@ -22,4 +22,6 @@ export interface SkillExecutionContext {
   sendReply: (text: string) => Promise<void>;
   requestConfirmation?: (prompt: string) => Promise<boolean>;
   preferences?: UserPreferences;
+  /** Resolve an ENS name or 0x address to a checksummed address. */
+  resolveAddress?: (nameOrAddress: string) => Promise<string>;
 }

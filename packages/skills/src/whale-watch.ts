@@ -665,11 +665,11 @@ export function createWhaleWatchSkill(engine: WhaleWatchEngine): SkillDefinition
   };
 }
 
-function handleWatch(
+async function handleWatch(
   engine: WhaleWatchEngine,
   parsed: z.infer<typeof whaleWatchParams>,
   context: SkillExecutionContext,
-): SkillResult {
+): Promise<SkillResult> {
   if (!parsed.address) {
     return {
       success: false,
@@ -677,9 +677,25 @@ function handleWatch(
     };
   }
 
+  let address = parsed.address;
+
+  // Resolve ENS name if needed (only for EVM, not Solana)
+  if (parsed.chainId !== 900 && !/^0x[a-fA-F0-9]{40}$/i.test(address)) {
+    if (!context.resolveAddress) {
+      return { success: false, message: "Invalid wallet address. Please provide a valid Ethereum address (0x...) or ENS name." };
+    }
+    try {
+      const resolved = await context.resolveAddress(address);
+      await context.sendReply(`_Resolved ${address} → \`${resolved.slice(0, 6)}...${resolved.slice(-4)}\`_`);
+      address = resolved;
+    } catch (err) {
+      return { success: false, message: `Could not resolve '${address}': ${err instanceof Error ? err.message : "Unknown error"}` };
+    }
+  }
+
   // Validate address format: EVM (0x...) or Solana (base58, 32-44 chars)
-  const isEvmAddress = /^0x[a-fA-F0-9]{40}$/.test(parsed.address);
-  const isSolanaAddress = parsed.chainId === 900 && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(parsed.address);
+  const isEvmAddress = /^0x[a-fA-F0-9]{40}$/.test(address);
+  const isSolanaAddress = parsed.chainId === 900 && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address);
   if (!isEvmAddress && !isSolanaAddress) {
     return {
       success: false,
@@ -699,7 +715,7 @@ function handleWatch(
 
   const watchId = engine.createWatch(
     context.userId,
-    parsed.address,
+    address,
     parsed.label ?? null,
     parsed.minValueUsd,
     parsed.chainId,
@@ -711,7 +727,7 @@ function handleWatch(
     success: true,
     message:
       `*Whale Watch #${watchId} Created*\n\n` +
-      `Watching: \`${shortenAddress(parsed.address)}\`${labelStr}\n` +
+      `Watching: \`${shortenAddress(address)}\`${labelStr}\n` +
       `Chain: ${chainName}\n` +
       `Min value: $${parsed.minValueUsd.toLocaleString("en-US")}\n\n` +
       `_You'll be notified when this wallet makes large transactions._`,

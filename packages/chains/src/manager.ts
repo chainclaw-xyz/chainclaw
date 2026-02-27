@@ -3,6 +3,7 @@ import { getLogger, type PortfolioSummary, type TokenBalance } from "@chainclaw/
 import { type ChainAdapter, createChainAdapter } from "./adapter.js";
 import { createSolanaAdapter } from "./solana-adapter.js";
 import { getChainInfo } from "./registry.js";
+import { EnsResolver } from "./ens.js";
 
 const logger = getLogger("chain-manager");
 
@@ -11,8 +12,10 @@ const EVM_CHAIN_IDS = [1, 8453, 42161, 10, 137, 56, 43114, 324, 534352, 81457, 1
 
 export class ChainManager {
   private adapters: Map<number, ChainAdapter> = new Map();
+  private ensResolver: EnsResolver;
 
   constructor(config: Config) {
+    this.ensResolver = new EnsResolver(config.ethRpcUrl);
     // Initialize EVM adapters with configured RPCs
     const rpcOverrides: Record<number, string> = {
       1: config.ethRpcUrl,
@@ -51,6 +54,14 @@ export class ChainManager {
 
   getSupportedChains(): number[] {
     return [...this.adapters.keys()];
+  }
+
+  async resolveAddress(nameOrAddress: string): Promise<string> {
+    return this.ensResolver.resolve(nameOrAddress);
+  }
+
+  getEnsResolver(): EnsResolver {
+    return this.ensResolver;
   }
 
   async getPortfolio(address: string): Promise<PortfolioSummary> {
