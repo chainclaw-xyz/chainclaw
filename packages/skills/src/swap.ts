@@ -1,11 +1,13 @@
 import { z } from "zod";
 import { parseEther, parseUnits, type Address, type Hex } from "viem";
+import { VersionedTransaction } from "@solana/web3.js";
 import { getLogger, fetchWithRetry, type SkillResult } from "@chainclaw/core";
-import type { TransactionExecutor } from "@chainclaw/pipeline";
+import type { TransactionExecutor, SolanaTransactionExecutor } from "@chainclaw/pipeline";
 import type { WalletManager } from "@chainclaw/wallet";
 import type { SkillDefinition, SkillExecutionContext } from "./types.js";
-import { getEthPriceUsd } from "./prices.js";
+import { getEthPriceUsd, getSolPriceUsd } from "./prices.js";
 import { TOKEN_INFO, CHAIN_NAMES, resolveToken } from "./token-addresses.js";
+import { getJupiterQuote, getJupiterSwapTransaction, formatSolanaTokenAmount } from "./providers/jupiter.js";
 
 const logger = getLogger("skill-swap");
 
@@ -31,10 +33,11 @@ export function createSwapSkill(
   executor: TransactionExecutor,
   walletManager: WalletManager,
   apiKey?: string,
+  solanaExecutor?: SolanaTransactionExecutor,
 ): SkillDefinition {
   return {
     name: "swap",
-    description: "Swap tokens via DEX aggregators. Finds best price across DEXes.",
+    description: "Swap tokens via DEX aggregators. Finds best price across DEXes. Supports EVM chains (1inch) and Solana (Jupiter).",
     parameters: swapParams,
 
     async execute(params: unknown, context: SkillExecutionContext): Promise<SkillResult> {
@@ -47,7 +50,6 @@ export function createSwapSkill(
       const { fromToken, toToken, amount, chainId } = parsed;
       const fromUpper = fromToken.toUpperCase();
       const toUpper = toToken.toUpperCase();
-      const isFromNative = fromUpper === "ETH";
 
       // Use slippage from LLM params, fall back to user preferences, then default 100 bps (1%)
       const slippageBps = parsed.slippageBps
@@ -55,6 +57,19 @@ export function createSwapSkill(
         ?? 100;
 
       logger.info({ fromToken: fromUpper, toToken: toUpper, amount, chainId, slippageBps }, "Executing swap");
+
+      // ─── Solana swap via Jupiter ─────────────────────────
+      if (chainId === 900) {
+        return executeSolanaSwap(
+          { fromToken: fromUpper, toToken: toUpper, amount, slippageBps },
+          context,
+          walletManager,
+          solanaExecutor,
+        );
+      }
+
+      // ─── EVM swap via 1inch ──────────────────────────────
+      const isFromNative = fromUpper === "ETH";
 
       // Resolve token addresses
       const chainTokens = TOKEN_INFO[chainId];
@@ -159,6 +174,133 @@ export function createSwapSkill(
     },
   };
 }
+
+// ─── Solana Swap (Jupiter) ──────────────────────────────────
+
+async function executeSolanaSwap(
+  parsed: { fromToken: string; toToken: string; amount: string; slippageBps: number },
+  context: SkillExecutionContext,
+  walletManager: WalletManager,
+  solanaExecutor?: SolanaTransactionExecutor,
+): Promise<SkillResult> {
+  if (!solanaExecutor) {
+    return { success: false, message: "Solana transaction executor is not configured. Set SOLANA_RPC_URL to enable Solana swaps." };
+  }
+
+  const { fromToken, toToken, amount, slippageBps } = parsed;
+
+  // Resolve Solana token mints
+  const fromInfo = resolveToken(900, fromToken);
+  const toInfo = resolveToken(900, toToken);
+
+  const isFromNative = fromToken === "SOL";
+  const isToNative = toToken === "SOL";
+
+  const inputMint = fromInfo?.address ?? (isFromNative ? "So11111111111111111111111111111111111111112" : null);
+  const outputMint = toInfo?.address ?? (isToNative ? "So11111111111111111111111111111111111111112" : null);
+
+  if (!inputMint || !outputMint) {
+    return { success: false, message: `Could not resolve token${!inputMint ? ` ${fromToken}` : ""}${!outputMint ? ` ${toToken}` : ""} on Solana. Use the token mint address directly.` };
+  }
+
+  // Convert amount to smallest unit
+  const fromDecimals = fromInfo?.decimals ?? (isFromNative ? 9 : 9);
+  const amountSmallest = BigInt(Math.floor(Number(amount) * 10 ** fromDecimals)).toString();
+
+  // Get Jupiter quote
+  const quote = await getJupiterQuote(inputMint, outputMint, amountSmallest, slippageBps);
+
+  if (!quote) {
+    return { success: false, message: `Could not get a Jupiter quote for ${amount} ${fromToken} → ${toToken} on Solana.` };
+  }
+
+  // Format output for user
+  const toDecimals = toInfo?.decimals ?? (isToNative ? 9 : 9);
+  const estimatedOutput = formatSolanaTokenAmount(quote.outAmount, toDecimals);
+  const priceImpact = Number(quote.priceImpactPct).toFixed(2);
+  const routeLabels = quote.routePlan.map((r) => r.swapInfo.label).join(" → ");
+
+  await context.sendReply(
+    `*Swap Quote (Jupiter)*\n\n` +
+    `${amount} ${fromToken} → ~${estimatedOutput} ${toToken}\n` +
+    `Chain: Solana\n` +
+    `Route: ${routeLabels}\n` +
+    `Price impact: ${priceImpact}%\n` +
+    `Slippage: ${slippageBps / 100}%\n\n` +
+    `_Executing via Jupiter..._`,
+  );
+
+  // Get the Solana wallet address
+  const solanaAddress = walletManager.getSolanaAddress();
+  if (!solanaAddress) {
+    return { success: false, message: "No Solana wallet configured. Create one with /wallet create-solana." };
+  }
+
+  // Get swap transaction from Jupiter
+  const swapResponse = await getJupiterSwapTransaction(quote, solanaAddress);
+
+  if (!swapResponse) {
+    return {
+      success: true,
+      message: `*Quote:* ${amount} ${fromToken} → ~${estimatedOutput} ${toToken}\n_Could not build swap transaction. Jupiter API may be temporarily unavailable._`,
+    };
+  }
+
+  // Deserialize the versioned transaction
+  const transactionBuf = Buffer.from(swapResponse.swapTransaction, "base64");
+  const transaction = VersionedTransaction.deserialize(transactionBuf);
+
+  // Get Solana signer
+  const signer = walletManager.getSolanaSigner(solanaAddress);
+  const solPrice = await getSolPriceUsd();
+
+  // Estimate value in USD for guardrails
+  const estimatedSolValue = isFromNative ? Number(amount) : 0;
+  const estimatedUsd = estimatedSolValue * solPrice;
+
+  // Execute through Solana pipeline
+  const result = await solanaExecutor.executePrebuilt(
+    transaction,
+    signer,
+    {
+      userId: context.userId,
+      skillName: "swap",
+      intentDescription: `Swap ${amount} ${fromToken} → ${toToken} on Solana`,
+      solPriceUsd: solPrice,
+      estimatedValueUsd: estimatedUsd,
+    },
+    {
+      onSimulated: async (preview) => {
+        await context.sendReply(preview);
+      },
+      onConfirmationRequired: context.requestConfirmation
+        ? async (preview) => {
+            return context.requestConfirmation!(
+              `*Confirmation Required*\n\n${preview}\n\nApprove this swap?`,
+            );
+          }
+        : undefined,
+      onBroadcast: async (signature) => {
+        await context.sendReply(`Transaction broadcast: \`${signature}\``);
+      },
+      onConfirmed: async (signature) => {
+        await context.sendReply(
+          `Swap confirmed on Solana!\n\n` +
+          `${amount} ${fromToken} → ~${estimatedOutput} ${toToken}\n` +
+          `Signature: \`${signature}\`\n` +
+          `[View on Solscan](https://solscan.io/tx/${signature})`,
+        );
+      },
+      onFailed: async (error) => {
+        await context.sendReply(`Swap failed: ${error}`);
+      },
+    },
+  );
+
+  return { success: result.success, message: result.message };
+}
+
+// ─── EVM Helpers ────────────────────────────────────────────
 
 async function getSwapQuote(
   chainId: number,

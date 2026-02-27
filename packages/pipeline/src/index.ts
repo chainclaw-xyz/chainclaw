@@ -1,4 +1,5 @@
 export { TransactionExecutor, type ExecutionCallbacks } from "./executor.js";
+export { SolanaTransactionExecutor, type SolanaTransactionRequest, type SolanaExecutionCallbacks, type SolanaExecutionResult } from "./solana-executor.js";
 export { TransactionSimulator, type SimulatorConfig } from "./simulator.js";
 export { Guardrails } from "./guardrails.js";
 export { NonceManager } from "./nonce.js";

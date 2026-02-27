@@ -1,12 +1,14 @@
 import { z } from "zod";
 import type Database from "better-sqlite3";
 import { parseUnits, type Address, type Hex } from "viem";
+import { VersionedTransaction } from "@solana/web3.js";
 import { getLogger, fetchWithRetry, type SkillResult } from "@chainclaw/core";
-import type { TransactionExecutor } from "@chainclaw/pipeline";
+import type { TransactionExecutor, SolanaTransactionExecutor } from "@chainclaw/pipeline";
 import type { WalletManager } from "@chainclaw/wallet";
 import type { SkillDefinition, SkillExecutionContext } from "./types.js";
-import { getEthPriceUsd, getTokenPrice } from "./prices.js";
+import { getEthPriceUsd, getSolPriceUsd, getTokenPrice } from "./prices.js";
 import { resolveToken, getChainName } from "./token-addresses.js";
+import { getJupiterQuote, getJupiterSwapTransaction } from "./providers/jupiter.js";
 
 const logger = getLogger("skill-dca");
 
@@ -65,6 +67,7 @@ export class DcaScheduler {
     private executor: TransactionExecutor,
     private walletManager: WalletManager,
     private oneInchApiKey?: string,
+    private solanaExecutor?: SolanaTransactionExecutor,
   ) {
     this.initTable();
   }
@@ -149,6 +152,10 @@ export class DcaScheduler {
     return result.changes > 0;
   }
 
+  supportsSolana(): boolean {
+    return this.solanaExecutor != null;
+  }
+
   /** Start the polling loop (call once at server startup) */
   start(pollIntervalMs = 60_000): void {
     if (this.running) return;
@@ -222,6 +229,25 @@ export class DcaScheduler {
   }
 
   private async executeJob(job: DcaJob): Promise<void> {
+    // Determine swap amount based on strategy (shared by EVM + Solana)
+    let swapAmount = job.amount;
+    if (job.strategy === "smart") {
+      const { amount, skipped } = await this.computeSmartAmount(job);
+      if (skipped) {
+        this.advanceJob(job, "0", null);
+        return;
+      }
+      swapAmount = amount;
+    }
+
+    if (job.chain_id === 900) {
+      await this.executeJobSolana(job, swapAmount);
+    } else {
+      await this.executeJobEvm(job, swapAmount);
+    }
+  }
+
+  private async executeJobEvm(job: DcaJob, swapAmount: string): Promise<void> {
     const fromUpper = job.from_token.toUpperCase();
     const toUpper = job.to_token.toUpperCase();
     const chainId = job.chain_id;
@@ -231,17 +257,6 @@ export class DcaScheduler {
     if (!fromInfo || !toInfo) {
       logger.warn({ jobId: job.id, fromToken: fromUpper, toToken: toUpper }, "Token not found, skipping DCA");
       return;
-    }
-
-    // Determine swap amount based on strategy
-    let swapAmount = job.amount;
-    if (job.strategy === "smart") {
-      const { amount, skipped } = await this.computeSmartAmount(job);
-      if (skipped) {
-        this.advanceJob(job, "0", null);
-        return;
-      }
-      swapAmount = amount;
     }
 
     const amountWei = parseUnits(swapAmount, fromInfo.decimals);
@@ -317,6 +332,77 @@ export class DcaScheduler {
     }
   }
 
+  private async executeJobSolana(job: DcaJob, swapAmount: string): Promise<void> {
+    if (!this.solanaExecutor) {
+      logger.warn({ jobId: job.id }, "Solana executor not configured, skipping Solana DCA");
+      return;
+    }
+
+    const fromUpper = job.from_token.toUpperCase();
+    const toUpper = job.to_token.toUpperCase();
+
+    const fromInfo = resolveToken(900, fromUpper);
+    const toInfo = resolveToken(900, toUpper);
+    if (!fromInfo || !toInfo) {
+      logger.warn({ jobId: job.id, fromToken: fromUpper, toToken: toUpper }, "Solana token not found, skipping DCA");
+      return;
+    }
+
+    // Convert to smallest unit
+    const amountSmallest = BigInt(Math.floor(Number(swapAmount) * 10 ** fromInfo.decimals)).toString();
+
+    // Get Jupiter quote (DCA uses 1% slippage = 100 bps)
+    const quote = await getJupiterQuote(fromInfo.address, toInfo.address, amountSmallest, 100);
+    if (!quote) {
+      logger.warn({ jobId: job.id }, "Jupiter quote failed for DCA, will retry next poll");
+      return;
+    }
+
+    // Solana wallet address is stored in the job
+    const solanaAddress = job.wallet_address;
+
+    // Get swap transaction
+    const swapResponse = await getJupiterSwapTransaction(quote, solanaAddress);
+    if (!swapResponse) {
+      logger.warn({ jobId: job.id }, "Jupiter swap tx build failed, will retry next poll");
+      return;
+    }
+
+    // Deserialize and execute
+    const transactionBuf = Buffer.from(swapResponse.swapTransaction, "base64");
+    const transaction = VersionedTransaction.deserialize(transactionBuf);
+
+    const signer = this.walletManager.getSolanaSigner(solanaAddress);
+    const solPrice = await getSolPriceUsd();
+
+    const isFromNative = fromUpper === "SOL" || fromUpper === "WSOL";
+    const estimatedSolValue = isFromNative ? Number(swapAmount) : 0;
+
+    const result = await this.solanaExecutor.executePrebuilt(
+      transaction,
+      signer,
+      {
+        userId: job.user_id,
+        skillName: "dca",
+        intentDescription: `DCA: swap ${swapAmount} ${fromUpper} → ${toUpper} (job #${job.id}, ${job.strategy})`,
+        solPriceUsd: solPrice,
+        estimatedValueUsd: estimatedSolValue * solPrice,
+      },
+    );
+
+    if (result.success) {
+      const toDecimals = toInfo.decimals;
+      const received = Number(BigInt(quote.outAmount)) / 10 ** toDecimals;
+      const spent = Number(swapAmount);
+      const price = spent > 0 && received > 0 ? (spent / received).toFixed(6) : null;
+      this.advanceJob(job, swapAmount, price);
+      logger.info({ jobId: job.id, executions: job.total_executions + 1, strategy: job.strategy }, "Solana DCA execution succeeded");
+    } else {
+      logger.warn({ jobId: job.id, message: result.message }, "Solana DCA swap execution failed");
+      this.advanceJob(job, "0", null);
+    }
+  }
+
   private advanceJob(job: DcaJob, spentThisRound: string, priceThisRound: string | null): void {
     const newTotal = job.total_executions + 1;
     const newSpent = (Number(job.total_spent) + Number(spentThisRound)).toString();
@@ -348,12 +434,13 @@ export class DcaScheduler {
 
 // ─── DCA Skill Definition ───────────────────────────────────────
 
-export function createDcaSkill(scheduler: DcaScheduler): SkillDefinition {
+export function createDcaSkill(scheduler: DcaScheduler, walletManager: WalletManager): SkillDefinition {
   return {
     name: "dca",
     description:
       "Dollar-cost averaging. Create recurring swap schedules (hourly, daily, weekly). " +
       "Supports fixed (constant amount) and smart (value averaging — buys more on dips, less on rises) strategies. " +
+      "Works on EVM chains (1inch) and Solana (Jupiter). " +
       "Manage with list, pause, resume, cancel, or status.",
     parameters: dcaParams,
 
@@ -366,7 +453,7 @@ export function createDcaSkill(scheduler: DcaScheduler): SkillDefinition {
 
       switch (parsed.action) {
         case "create":
-          return handleCreate(scheduler, parsed, context);
+          return handleCreate(scheduler, walletManager, parsed, context);
         case "list":
           return handleList(scheduler, context);
         case "pause":
@@ -384,6 +471,7 @@ export function createDcaSkill(scheduler: DcaScheduler): SkillDefinition {
 
 function handleCreate(
   scheduler: DcaScheduler,
+  walletManager: WalletManager,
   parsed: z.infer<typeof dcaParams>,
   context: SkillExecutionContext,
 ): SkillResult {
@@ -405,9 +493,22 @@ function handleCreate(
     return { success: false, message: `${toToken} is not supported on ${getChainName(chainId)}.` };
   }
 
+  // For Solana DCA, verify executor is available and use Solana wallet address
+  let walletAddr = context.walletAddress!;
+  if (chainId === 900) {
+    if (!scheduler.supportsSolana()) {
+      return { success: false, message: "Solana DCA is not available. Set SOLANA_RPC_URL to enable it." };
+    }
+    const solAddr = walletManager.getSolanaAddress();
+    if (!solAddr) {
+      return { success: false, message: "No Solana wallet configured. Use /wallet create-solana first." };
+    }
+    walletAddr = solAddr;
+  }
+
   const jobId = scheduler.createJob(
     context.userId, fromToken, toToken, amount, chainId,
-    frequency, parsed.maxExecutions ?? null, context.walletAddress!, strategy,
+    frequency, parsed.maxExecutions ?? null, walletAddr, strategy,
   );
 
   const maxLabel = parsed.maxExecutions ? ` (${parsed.maxExecutions} executions)` : " (unlimited)";

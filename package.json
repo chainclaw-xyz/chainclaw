@@ -53,5 +53,8 @@
     "globals": "^17.3.0",
     "turbo": "^2.8.9",
     "typescript-eslint": "^8.36.0"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-darwin-arm64": "^4.59.0"
   }
 }
