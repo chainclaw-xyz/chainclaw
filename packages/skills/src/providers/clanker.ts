@@ -36,7 +36,7 @@ export class ClankerProvider implements TokenLaunchProvider {
     const { name, symbol, description, imageUrl, chainId } = params;
 
     // 32-char unique request key to ensure idempotency
-    const requestKey = crypto.randomUUID().replace(/-/g, "").slice(0, 32);
+    const requestKey = crypto.randomUUID().replace(/-/g, "");
 
     const payload = {
       token: {

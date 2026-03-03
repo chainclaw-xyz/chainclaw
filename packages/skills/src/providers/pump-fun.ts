@@ -36,7 +36,7 @@ export class PumpFunProvider implements TokenLaunchProvider {
     walletAddress: string,
     _privateKey: string,
   ): Promise<LaunchResult> {
-    const { name, symbol, description, imageUrl, twitter, telegram, website, initialBuySol = "0.1" } = params;
+    const { name, symbol, description, imageUrl, twitter, telegram, website, initialBuySol } = params;
 
     // 1. Ephemeral mint keypair
     const mintKeypair = Keypair.generate();
@@ -62,7 +62,7 @@ export class PumpFunProvider implements TokenLaunchProvider {
       },
       mint: mintAddress,
       denominatedInSol: "true",
-      amount: parseFloat(initialBuySol),
+      amount: parseFloat(initialBuySol ?? "0.1"),
       slippage: 10,
       priorityFee: 0.0005,
       pool: "pump",

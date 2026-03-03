@@ -233,16 +233,22 @@ async function handleLaunch(
   let privateKey: string;
 
   try {
-    // Retrieve private key to verify wallet is accessible before kicking off API calls.
-    // PumpFunProvider uses walletAddress directly (not privateKey) for the buyer field;
-    // Clanker ignores privateKey entirely. EVM providers may use it for signing.
-    privateKey = walletManager.getPrivateKey(walletAddress);
+    if (isSolana) {
+      // For Solana, validate wallet accessibility via getSolanaSigner (which decrypts the keypair).
+      // The signer is retrieved again later before broadcasting; this is just a pre-flight check.
+      // getPrivateKey() is not appropriate here — Solana keys are 64-byte hex, not EVM 32-byte.
+      walletManager.getSolanaSigner(walletAddress);
+      privateKey = "";
+    } else {
+      // For EVM providers, getPrivateKey validates the wallet and may be used for signing.
+      privateKey = walletManager.getPrivateKey(walletAddress);
+    }
   } catch {
-    return { success: false, message: "Could not access wallet private key. Ensure your wallet is unlocked." };
+    return { success: false, message: "Could not access wallet. Ensure the wallet is unlocked and properly configured." };
   }
 
   await context.sendReply(
-    `_Launching **${name}** (${symbol}) via ${provider.name} on chainId ${chainId}…_`,
+    `_Launching *${name}* (${symbol}) via ${provider.name} on chainId ${chainId}…_`,
   );
 
   const launchId = engine.recordLaunch(context.userId, chainId, name, symbol, provider.name);
