@@ -50,7 +50,10 @@ export class PumpFunProvider implements TokenLaunchProvider {
     logger.debug({ metadataUri }, "Metadata uploaded to IPFS");
 
     // 3. Build create transaction via pumpportal local API
+    // `publicKey` is the buyer wallet — required so pumpportal can build the
+    // correct transaction with the right fee-payer and initial-buy instruction.
     const tradePayload = {
+      publicKey: walletAddress,
       action: "create",
       tokenMetadata: {
         name,

@@ -145,7 +145,7 @@ export function createTokenLaunchSkill(
       const parsed = tokenLaunchParams.parse(params);
 
       if (parsed.action === "list") {
-        return handleList(engine, context);
+        return handleList(engine, context, parsed.limit, parsed.offset);
       }
 
       return handleLaunch(parsed, engine, walletManager, solanaExecutor, context);
@@ -155,8 +155,13 @@ export function createTokenLaunchSkill(
 
 // ─── Action: list ─────────────────────────────────────────────
 
-function handleList(engine: TokenLaunchEngine, context: SkillExecutionContext): SkillResult {
-  const rows = engine.getUserLaunches(context.userId, 20, 0);
+function handleList(
+  engine: TokenLaunchEngine,
+  context: SkillExecutionContext,
+  limit: number,
+  offset: number,
+): SkillResult {
+  const rows = engine.getUserLaunches(context.userId, limit, offset);
 
   if (rows.length === 0) {
     return { success: true, message: "No token launches found. Use 'launch' to create your first token." };
@@ -210,18 +215,13 @@ async function handleLaunch(
     return { success: false, message: "No wallet configured. Use /wallet create to get started." };
   }
 
-  const isSolana = chainId === 900;
   let privateKey: string;
 
   try {
-    if (isSolana) {
-      // For Solana we need the raw hex secret key for the Keypair; WalletManager stores it encrypted
-      // We pass it so pump.fun can sign the initial-buy using the user wallet later
-      // (the mint keypair is ephemeral and generated inside PumpFunProvider)
-      privateKey = walletManager.getPrivateKey(walletAddress);
-    } else {
-      privateKey = walletManager.getPrivateKey(walletAddress);
-    }
+    // Retrieve private key to verify wallet is accessible before kicking off the API calls.
+    // PumpFunProvider uses walletAddress directly (not privateKey) for the buyer field;
+    // Clanker ignores privateKey entirely. EVM providers may use it for signing.
+    privateKey = walletManager.getPrivateKey(walletAddress);
   } catch {
     return { success: false, message: "Could not access wallet private key. Ensure your wallet is unlocked." };
   }
@@ -291,7 +291,14 @@ async function handleLaunch(
       };
     }
 
-    // EVM providers (Clanker) — no tx to broadcast
+    // EVM providers (Clanker) — no tx to broadcast.
+    // An empty tokenAddress means the provider returned an informational message
+    // (e.g. Clanker with no API key configured) rather than actually deploying.
+    if (!result.tokenAddress) {
+      engine.failLaunch(launchId);
+      return { success: false, message: result.message };
+    }
+
     engine.confirmLaunch(launchId, result.tokenAddress, result.txHash);
 
     return {

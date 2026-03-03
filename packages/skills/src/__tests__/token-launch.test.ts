@@ -328,3 +328,55 @@ describe("ClankerProvider", () => {
     expect(result.message).toMatch(/CLANKER_API_KEY/);
   });
 });
+
+// ─── Regression: Clanker no-key → DB record must be 'failed' ──
+
+describe("createTokenLaunchSkill — Clanker no-key regression", () => {
+  it("marks launch failed and returns false when Clanker has no API key", async () => {
+    const db = new Database(":memory:");
+    const noKeyProvider: TokenLaunchProvider = {
+      name: "clanker",
+      supportedChains: [8453],
+      launch: vi.fn().mockResolvedValue({ tokenAddress: "", message: "Set CLANKER_API_KEY in your .env." }),
+    };
+    const engine = new TokenLaunchEngine(db, [noKeyProvider]);
+    const walletManager = createMockWalletManager();
+    const skill = createTokenLaunchSkill(engine, walletManager as never);
+
+    const ctx = mockContext();
+    const result = await skill.execute({ action: "launch", name: "X", symbol: "X", chainId: 8453 }, ctx);
+
+    expect(result.success).toBe(false);
+    expect(result.message).toMatch(/CLANKER_API_KEY/);
+
+    const rows = engine.getUserLaunches("user-1");
+    expect(rows[0].status).toBe("failed");
+    db.close();
+  });
+});
+
+// ─── handleList respects limit / offset ───────────────────────
+
+describe("createTokenLaunchSkill — list pagination", () => {
+  it("forwards limit and offset to getUserLaunches", async () => {
+    const db = new Database(":memory:");
+    const evmProvider = createMockEVMProvider();
+    const engine = new TokenLaunchEngine(db, [evmProvider]);
+    const walletManager = createMockWalletManager();
+    const skill = createTokenLaunchSkill(engine, walletManager as never);
+
+    // Insert 5 launches
+    for (let i = 0; i < 5; i++) {
+      engine.recordLaunch("user-1", 8453, `Token${i}`, `TK${i}`, "mock-evm");
+    }
+
+    const ctx = mockContext();
+    // limit=2, offset=0 → first 2 (newest first)
+    const result = await skill.execute({ action: "list", limit: 2, offset: 0 }, ctx);
+    expect(result.success).toBe(true);
+    const lines = result.message.split("\n").filter((l) => l.startsWith("•"));
+    expect(lines).toHaveLength(2);
+
+    db.close();
+  });
+});
