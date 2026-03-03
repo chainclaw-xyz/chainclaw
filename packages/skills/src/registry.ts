@@ -25,6 +25,7 @@ const LANE_MAP: Record<string, string> = {
   agent: "background",
   "trading-signals": "query",
   privacy: "tx",
+  "token-launch": "tx",
 };
 
 const DEFAULT_LANE = "default";
