@@ -1,5 +1,4 @@
 import { z } from "zod";
-import type { VersionedTransaction } from "@solana/web3.js";
 import type Database from "better-sqlite3";
 import { getLogger, type SkillResult } from "@chainclaw/core";
 import type { SolanaTransactionExecutor } from "@chainclaw/pipeline";
@@ -128,6 +127,11 @@ const tokenLaunchParams = z.object({
   offset: z.number().min(0).optional().default(0),
 });
 
+// Escape Telegram MarkdownV2 special chars that appear in provider names
+function escapeMd(text: string): string {
+  return text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&");
+}
+
 // ─── Skill Factory ────────────────────────────────────────────
 
 export function createTokenLaunchSkill(
@@ -215,10 +219,21 @@ async function handleLaunch(
     return { success: false, message: "No wallet configured. Use /wallet create to get started." };
   }
 
+  // Solana (pump.fun) requires a Solana wallet (base58 public key), not an EVM 0x address.
+  const isSolana = chainId === 900;
+  if (isSolana && walletAddress.startsWith("0x")) {
+    return {
+      success: false,
+      message:
+        "pump.fun requires a Solana wallet. Your current default wallet is an EVM address. " +
+        "Create or import a Solana wallet and set it as default first.",
+    };
+  }
+
   let privateKey: string;
 
   try {
-    // Retrieve private key to verify wallet is accessible before kicking off the API calls.
+    // Retrieve private key to verify wallet is accessible before kicking off API calls.
     // PumpFunProvider uses walletAddress directly (not privateKey) for the buyer field;
     // Clanker ignores privateKey entirely. EVM providers may use it for signing.
     privateKey = walletManager.getPrivateKey(walletAddress);
@@ -247,9 +262,8 @@ async function handleLaunch(
   try {
     const result = await provider.launch(launchParams, walletAddress, privateKey);
 
-    // pump.fun returns a signed VersionedTransaction that needs broadcasting
-    const resultWithTx = result as typeof result & { signedTx?: VersionedTransaction };
-    if (resultWithTx.signedTx) {
+    // pump.fun providers set result.signedTx — broadcast via solanaExecutor
+    if (result.signedTx) {
       if (!solanaExecutor) {
         engine.failLaunch(launchId);
         return {
@@ -260,7 +274,7 @@ async function handleLaunch(
 
       const signer = walletManager.getSolanaSigner(walletAddress);
       const execResult = await solanaExecutor.executePrebuilt(
-        resultWithTx.signedTx,
+        result.signedTx,
         signer,
         {
           userId: context.userId,
@@ -304,7 +318,7 @@ async function handleLaunch(
     return {
       success: true,
       message: [
-        `*Token Queued via ${provider.name}*`,
+        `*Token Queued via ${escapeMd(provider.name)}*`,
         "",
         `*Name:* ${name}`,
         `*Symbol:* ${symbol}`,

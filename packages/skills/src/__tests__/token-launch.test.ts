@@ -246,6 +246,9 @@ describe("createTokenLaunchSkill — EVM (Clanker)", () => {
   });
 });
 
+// Solana wallet address — base58, does NOT start with 0x
+const SOLANA_WALLET = "8YNMVRpGpg4AKsjWoiPe3S9HVxZ8j5aFmPVhRLVGUxK";
+
 describe("createTokenLaunchSkill — Solana (pump.fun)", () => {
   let db: Database.Database;
   let engine: TokenLaunchEngine;
@@ -262,9 +265,23 @@ describe("createTokenLaunchSkill — Solana (pump.fun)", () => {
     db.close();
   });
 
+  it("returns error when walletAddress is an EVM address (not Solana)", async () => {
+    const skill = createTokenLaunchSkill(engine, walletManager as never, undefined);
+    // default mockContext uses 0xABCdef... — an EVM address
+    const ctx = mockContext({ chainIds: [900] });
+    const result = await skill.execute(
+      { action: "launch", name: "PumpToken", symbol: "PUMP", chainId: 900 },
+      ctx,
+    );
+    expect(result.success).toBe(false);
+    expect(result.message).toMatch(/Solana wallet/i);
+    // No DB record should be created at this point
+    expect(engine.getUserLaunches("user-1")).toHaveLength(0);
+  });
+
   it("returns error when solana executor not available", async () => {
     const skill = createTokenLaunchSkill(engine, walletManager as never, undefined);
-    const ctx = mockContext({ chainIds: [900] });
+    const ctx = mockContext({ walletAddress: SOLANA_WALLET, chainIds: [900] });
     const result = await skill.execute(
       { action: "launch", name: "PumpToken", symbol: "PUMP", chainId: 900 },
       ctx,
@@ -280,7 +297,7 @@ describe("createTokenLaunchSkill — Solana (pump.fun)", () => {
     const solanaExecutor = createMockSolanaExecutor(true);
     const skill = createTokenLaunchSkill(engine, walletManager as never, solanaExecutor as never);
 
-    const ctx = mockContext({ chainIds: [900] });
+    const ctx = mockContext({ walletAddress: SOLANA_WALLET, chainIds: [900] });
     const result = await skill.execute(
       { action: "launch", name: "PumpToken", symbol: "PUMP", chainId: 900, initialBuySol: "0.05" },
       ctx,
@@ -300,7 +317,7 @@ describe("createTokenLaunchSkill — Solana (pump.fun)", () => {
     const solanaExecutor = createMockSolanaExecutor(false);
     const skill = createTokenLaunchSkill(engine, walletManager as never, solanaExecutor as never);
 
-    const ctx = mockContext({ chainIds: [900] });
+    const ctx = mockContext({ walletAddress: SOLANA_WALLET, chainIds: [900] });
     const result = await skill.execute(
       { action: "launch", name: "PumpToken", symbol: "PUMP", chainId: 900 },
       ctx,

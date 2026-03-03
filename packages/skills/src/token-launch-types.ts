@@ -1,3 +1,5 @@
+import type { VersionedTransaction } from "@solana/web3.js";
+
 // ─── Token Launch Provider Interface ─────────────────────────
 // Provider-agnostic abstraction over token launchpads (pump.fun, Clanker, etc.)
 
@@ -9,8 +11,9 @@ export interface TokenLaunchProvider {
 
   /**
    * Launch a new token on the launchpad.
-   * For pump.fun, privateKey is the Solana wallet secret key hex.
-   * For Clanker, walletAddress is used as token admin; privateKey is unused.
+   * - walletAddress: used by pump.fun as the buyer/fee-payer, by Clanker as tokenAdmin.
+   * - privateKey: EVM private key (hex); not used by either current provider but
+   *   available for future EVM providers that need to sign on-chain.
    */
   launch(
     params: LaunchParams,
@@ -44,4 +47,11 @@ export interface LaunchResult {
   txHash?: string;
   /** Human-readable status message */
   message: string;
+  /**
+   * Pre-signed Solana transaction to broadcast (pump.fun only).
+   * Present when the provider has built and mint-keypair-signed the tx but
+   * has not broadcast it — the skill is responsible for broadcasting via
+   * SolanaTransactionExecutor.executePrebuilt().
+   */
+  signedTx?: VersionedTransaction;
 }

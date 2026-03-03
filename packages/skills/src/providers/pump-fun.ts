@@ -35,7 +35,7 @@ export class PumpFunProvider implements TokenLaunchProvider {
     params: LaunchParams,
     walletAddress: string,
     _privateKey: string,
-  ): Promise<LaunchResult & { signedTx?: VersionedTransaction }> {
+  ): Promise<LaunchResult> {
     const { name, symbol, description, imageUrl, twitter, telegram, website, initialBuySol = "0.1" } = params;
 
     // 1. Ephemeral mint keypair
