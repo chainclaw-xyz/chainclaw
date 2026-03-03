@@ -1,0 +1,315 @@
+import { z } from "zod";
+import type { VersionedTransaction } from "@solana/web3.js";
+import type Database from "better-sqlite3";
+import { getLogger, type SkillResult } from "@chainclaw/core";
+import type { SolanaTransactionExecutor } from "@chainclaw/pipeline";
+import type { WalletManager } from "@chainclaw/wallet";
+import type { SkillDefinition, SkillExecutionContext } from "./types.js";
+import type { TokenLaunchProvider, LaunchParams } from "./token-launch-types.js";
+
+const logger = getLogger("skill-token-launch");
+
+// ─── DB Row Interface ─────────────────────────────────────────
+
+interface LaunchRow {
+  id: number;
+  user_id: string;
+  chain_id: number;
+  name: string;
+  symbol: string;
+  token_address: string | null;
+  tx_hash: string | null;
+  status: string;
+  provider: string;
+  created_at: string;
+}
+
+// ─── Token Launch Engine ──────────────────────────────────────
+
+export class TokenLaunchEngine {
+  private providerMap: Map<number, TokenLaunchProvider> = new Map();
+
+  constructor(
+    private db: Database.Database,
+    providers: TokenLaunchProvider[],
+  ) {
+    this.initTable();
+    for (const provider of providers) {
+      for (const chainId of provider.supportedChains) {
+        this.providerMap.set(chainId, provider);
+      }
+    }
+  }
+
+  private initTable(): void {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS token_launches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        chain_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        token_address TEXT,
+        tx_hash TEXT,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'confirmed', 'failed')),
+        provider TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_token_launches_user ON token_launches(user_id);
+      CREATE INDEX IF NOT EXISTS idx_token_launches_status ON token_launches(status);
+    `);
+    logger.debug("Token launch table initialized");
+  }
+
+  getProvider(chainId: number): TokenLaunchProvider | undefined {
+    return this.providerMap.get(chainId);
+  }
+
+  getSupportedChains(): number[] {
+    return [...this.providerMap.keys()];
+  }
+
+  recordLaunch(
+    userId: string,
+    chainId: number,
+    name: string,
+    symbol: string,
+    providerName: string,
+  ): number {
+    const result = this.db
+      .prepare(
+        `INSERT INTO token_launches (user_id, chain_id, name, symbol, provider)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(userId, chainId, name, symbol, providerName);
+    return result.lastInsertRowid as number;
+  }
+
+  confirmLaunch(id: number, tokenAddress: string, txHash?: string): void {
+    this.db
+      .prepare(
+        `UPDATE token_launches SET status = 'confirmed', token_address = ?, tx_hash = ? WHERE id = ?`,
+      )
+      .run(tokenAddress, txHash ?? null, id);
+  }
+
+  failLaunch(id: number): void {
+    this.db.prepare(`UPDATE token_launches SET status = 'failed' WHERE id = ?`).run(id);
+  }
+
+  getUserLaunches(userId: string, limit = 20, offset = 0): LaunchRow[] {
+    return this.db
+      .prepare(
+        `SELECT * FROM token_launches WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      )
+      .all(userId, limit, offset) as LaunchRow[];
+  }
+}
+
+// ─── Skill Parameters ─────────────────────────────────────────
+
+const tokenLaunchParams = z.object({
+  action: z.enum(["launch", "list"]).default("launch"),
+  name: z.string().min(1).max(64).optional(),
+  symbol: z.string().min(1).max(10).optional(),
+  description: z.string().max(500).optional(),
+  imageUrl: z.string().url().optional(),
+  twitter: z.string().optional(),
+  telegram: z.string().optional(),
+  website: z.string().optional(),
+  chainId: z.number().optional().default(8453),
+  initialBuySol: z
+    .string()
+    .regex(/^\d+(\.\d+)?$/, "Must be a positive number (e.g. '0.1')")
+    .optional()
+    .default("0.1"),
+  limit: z.number().min(1).max(100).optional().default(20),
+  offset: z.number().min(0).optional().default(0),
+});
+
+// ─── Skill Factory ────────────────────────────────────────────
+
+export function createTokenLaunchSkill(
+  engine: TokenLaunchEngine,
+  walletManager: WalletManager,
+  solanaExecutor?: SolanaTransactionExecutor,
+): SkillDefinition {
+  return {
+    name: "token-launch",
+    description:
+      "Launch a new token on a launchpad. Supports pump.fun (Solana, chainId 900) and Clanker (Base/Unichain/Arbitrum). Provide a name, symbol, and chainId.",
+    parameters: tokenLaunchParams,
+
+    async execute(params: unknown, context: SkillExecutionContext): Promise<SkillResult> {
+      const parsed = tokenLaunchParams.parse(params);
+
+      if (parsed.action === "list") {
+        return handleList(engine, context);
+      }
+
+      return handleLaunch(parsed, engine, walletManager, solanaExecutor, context);
+    },
+  };
+}
+
+// ─── Action: list ─────────────────────────────────────────────
+
+function handleList(engine: TokenLaunchEngine, context: SkillExecutionContext): SkillResult {
+  const rows = engine.getUserLaunches(context.userId, 20, 0);
+
+  if (rows.length === 0) {
+    return { success: true, message: "No token launches found. Use 'launch' to create your first token." };
+  }
+
+  const lines = rows.map((r) => {
+    const addr = r.token_address
+      ? `\`${r.token_address.slice(0, 8)}...${r.token_address.slice(-6)}\``
+      : "pending";
+    return `• *${r.name}* (${r.symbol}) — ${addr} — ${r.status} — ${r.provider} — ${r.created_at.slice(0, 10)}`;
+  });
+
+  return {
+    success: true,
+    message: ["*Your Token Launches*", "", ...lines].join("\n"),
+  };
+}
+
+// ─── Action: launch ───────────────────────────────────────────
+
+async function handleLaunch(
+  parsed: z.infer<typeof tokenLaunchParams>,
+  engine: TokenLaunchEngine,
+  walletManager: WalletManager,
+  solanaExecutor: SolanaTransactionExecutor | undefined,
+  context: SkillExecutionContext,
+): Promise<SkillResult> {
+  const { name, symbol, description, imageUrl, twitter, telegram, website, chainId, initialBuySol } = parsed;
+
+  if (!name || !symbol) {
+    return { success: false, message: "Please provide both a token name and symbol." };
+  }
+
+  const provider = engine.getProvider(chainId);
+  if (!provider) {
+    const supported = engine
+      .getSupportedChains()
+      .map((id) => {
+        const p = engine.getProvider(id);
+        return `chainId ${id} (${p?.name ?? "unknown"})`;
+      })
+      .join(", ");
+    return {
+      success: false,
+      message: `No launch provider available for chainId ${chainId}. Supported: ${supported}`,
+    };
+  }
+
+  const walletAddress = context.walletAddress;
+  if (!walletAddress) {
+    return { success: false, message: "No wallet configured. Use /wallet create to get started." };
+  }
+
+  const isSolana = chainId === 900;
+  let privateKey: string;
+
+  try {
+    if (isSolana) {
+      // For Solana we need the raw hex secret key for the Keypair; WalletManager stores it encrypted
+      // We pass it so pump.fun can sign the initial-buy using the user wallet later
+      // (the mint keypair is ephemeral and generated inside PumpFunProvider)
+      privateKey = walletManager.getPrivateKey(walletAddress);
+    } else {
+      privateKey = walletManager.getPrivateKey(walletAddress);
+    }
+  } catch {
+    return { success: false, message: "Could not access wallet private key. Ensure your wallet is unlocked." };
+  }
+
+  await context.sendReply(
+    `_Launching **${name}** (${symbol}) via ${provider.name} on chainId ${chainId}…_`,
+  );
+
+  const launchId = engine.recordLaunch(context.userId, chainId, name, symbol, provider.name);
+
+  const launchParams: LaunchParams = {
+    name,
+    symbol,
+    description,
+    imageUrl,
+    twitter,
+    telegram,
+    website,
+    chainId,
+    initialBuySol,
+  };
+
+  try {
+    const result = await provider.launch(launchParams, walletAddress, privateKey);
+
+    // pump.fun returns a signed VersionedTransaction that needs broadcasting
+    const resultWithTx = result as typeof result & { signedTx?: VersionedTransaction };
+    if (resultWithTx.signedTx) {
+      if (!solanaExecutor) {
+        engine.failLaunch(launchId);
+        return {
+          success: false,
+          message: "Solana executor not available. Set SOLANA_RPC_URL in .env to enable pump.fun launches.",
+        };
+      }
+
+      const signer = walletManager.getSolanaSigner(walletAddress);
+      const execResult = await solanaExecutor.executePrebuilt(
+        resultWithTx.signedTx,
+        signer,
+        {
+          userId: context.userId,
+          skillName: "token-launch",
+          intentDescription: `Launch token ${name} (${symbol}) on pump.fun`,
+        },
+      );
+
+      if (!execResult.success) {
+        engine.failLaunch(launchId);
+        return { success: false, message: execResult.message ?? "pump.fun transaction failed." };
+      }
+
+      engine.confirmLaunch(launchId, result.tokenAddress, execResult.txId ?? execResult.signature);
+
+      return {
+        success: true,
+        message: [
+          `*Token Launched on pump\\.fun*`,
+          "",
+          `*Name:* ${name}`,
+          `*Symbol:* ${symbol}`,
+          `*Mint:* \`${result.tokenAddress}\``,
+          `*Tx:* \`${execResult.txId ?? execResult.signature ?? "—"}\``,
+          "",
+          `View on pump\\.fun: https://pump.fun/coin/${result.tokenAddress}`,
+        ].join("\n"),
+      };
+    }
+
+    // EVM providers (Clanker) — no tx to broadcast
+    engine.confirmLaunch(launchId, result.tokenAddress, result.txHash);
+
+    return {
+      success: true,
+      message: [
+        `*Token Queued via ${provider.name}*`,
+        "",
+        `*Name:* ${name}`,
+        `*Symbol:* ${symbol}`,
+        result.message,
+      ].join("\n"),
+    };
+  } catch (err) {
+    engine.failLaunch(launchId);
+    logger.error({ err, name, symbol, chainId }, "Token launch failed");
+    return {
+      success: false,
+      message: `Token launch failed: ${err instanceof Error ? err.message : "Unknown error"}`,
+    };
+  }
+}

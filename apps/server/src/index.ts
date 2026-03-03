@@ -46,6 +46,10 @@ import {
   PrivacyEngine,
   createPrivacySkill,
   RailgunProvider,
+  TokenLaunchEngine,
+  createTokenLaunchSkill,
+  PumpFunProvider,
+  ClankerProvider,
   getTokenPrice,
 } from "@chainclaw/skills";
 import { createLLMProvider, getDatabase, AgentRuntime, closeDatabase, createEmbeddingProvider } from "@chainclaw/agent";
@@ -201,6 +205,12 @@ async function main(): Promise<void> {
   const railgunProvider = new RailgunProvider(rpcOverrides);
   const privacyEngine = new PrivacyEngine(db, railgunProvider);
   skillRegistry.register(createPrivacySkill(privacyEngine, executor, walletManager));
+  const tokenLaunchProviders = [
+    new PumpFunProvider(),
+    new ClankerProvider(config.clankerApiKey),
+  ];
+  const tokenLaunchEngine = new TokenLaunchEngine(db, tokenLaunchProviders);
+  skillRegistry.register(createTokenLaunchSkill(tokenLaunchEngine, walletManager, solanaExecutor));
 
   // ─── Agent SDK (backtest + live agents) ─────────────────────
   const historicalData = new HistoricalDataProvider(db);

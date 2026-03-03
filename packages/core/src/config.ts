@@ -84,6 +84,9 @@ export const configSchema = z.object({
   // Solana
   solanaRpcUrl: z.string().url().optional(),
 
+  // Launchpads
+  clankerApiKey: z.string().optional(),
+
   // Security
   securityMode: z.enum(["open", "allowlist"]).default("open"),
   securityAllowlist: z.array(z.string()).default([]),
@@ -151,6 +154,7 @@ export function loadConfig(): Config {
       : 9090,
     skillsDir: process.env.SKILLS_DIR || undefined,
     solanaRpcUrl: process.env.SOLANA_RPC_URL || undefined,
+    clankerApiKey: process.env.CLANKER_API_KEY || undefined,
     securityMode: process.env.SECURITY_MODE || "open",
     securityAllowlist: process.env.SECURITY_ALLOWLIST
       ? process.env.SECURITY_ALLOWLIST.split(",").map((s: string) => s.trim()).filter(Boolean)
